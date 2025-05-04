@@ -3,7 +3,7 @@
  * Plugin Name:       WPBench
  * Plugin URI:        https://example.com/wpbench-plugin-uri/
  * Description:       Plugin that benchmarks and stress-tests your current WordPress site, allowing you to see what's slowing down your website.
- * Version:           1.0.2  <-- Incremented version
+ * Version:           1.0.2
  * Requires at least: 5.2
  * Requires PHP:      7.4
  * Author:            Your Name Here
@@ -13,6 +13,34 @@
  * Text Domain:       wpbench
  * Domain Path:       /languages
  * Namespace:         WPBench
+ *
+ * --------------------------------------------------------------------
+ *
+ * File:              wpbench.php
+ * Description:       The main file and entry point for the WPBench plugin.
+ *                    Responsible for setting up constants, autoloading classes,
+ *                    initializing the plugin, and handling activation/deactivation hooks.
+ *
+ * Constants:
+ * - WPBENCH_VERSION: Plugin version.
+ * - WPBENCH_PATH: Absolute path to the plugin's main directory.
+ * - WPBENCH_URL: URL to the plugin's main directory.
+ * - WPBENCH_BASE_NAMESPACE: Base namespace for all plugin classes.
+ *
+ * Functionality:
+ * - Registers and sets up an autoloader for plugin classes located in the `src/` directory.
+ * - Initializes the plugin by calling the main `\WPBench\Plugin` singleton instance.
+ * - Handles activation and deactivation hooks for setup and cleanup tasks.
+ * - Adds a helper function, `wpbench_option`, for retrieving plugin settings.
+ *
+ * Notes:
+ * - Do not access this file directly; always use the WordPress plugin loader for safety.
+ * - Hooks into `plugins_loaded` to ensure WordPress and all plugins are initialized before executing.
+ *
+ * --------------------------------------------------------------------
+ *
+ * @package    WPBench
+ * @author     Raymond Nunez <raypn93@gmail.com>
  */
 
 // Exit if accessed directly
