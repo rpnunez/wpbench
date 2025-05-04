@@ -19,73 +19,85 @@ class TestRegistry {
     /** @var array Cached instances of test classes. */
     private $instances = [];
 
+	/**
+	 * Scans the BenchmarkTest directory and returns info for available tests.
+	 * Caches the result for subsequent calls within the same request.
+	 *
+	 * @return array<string, array> Array of test info arrays, keyed by test ID. Returns empty array on failure.
+	 */
+	public function get_available_tests() : array {
+		if ($this->available_tests !== null) {
+			return $this->available_tests;
+		}
 
-    /**
-     * Scans the BenchmarkTest directory and returns info for available tests.
-     * Caches the result for subsequent calls within the same request.
-     *
-     * @return array<string, array> Array of test info arrays, keyed by test ID. Returns empty array on failure.
-     */
-    public function get_available_tests() : array {
-        if ($this->available_tests !== null) {
-            return $this->available_tests;
-        }
+		$this->available_tests = []; // Initialize as empty array
+		$test_dir = WPBENCH_PATH . 'src/BenchmarkTest/';
+		if (!is_dir($test_dir)) {
+			trigger_error("WPBench: BenchmarkTest directory not found at $test_dir", E_USER_WARNING);
+			return $this->available_tests;
+		}
 
-        $this->available_tests = []; // Initialize as empty array
-        $test_dir = WPBENCH_PATH . 'src/BenchmarkTest/';
-        if (!is_dir($test_dir)) {
-             trigger_error("WPBench: BenchmarkTest directory not found at $test_dir", E_USER_WARNING);
-             return $this->available_tests;
-        }
+		$files = glob( $test_dir . '*.php' );
+		if ( empty($files) ) {
+			// This isn't necessarily an error, might just be no tests defined yet
+			// trigger_error("WPBench: No PHP files found in BenchmarkTest directory $test_dir", E_USER_WARNING);
+			return $this->available_tests;
+		}
 
-        $files = glob( $test_dir . '*.php' );
-        if ( empty($files) ) {
-            trigger_error("WPBench: No PHP files found in BenchmarkTest directory $test_dir", E_USER_WARNING);
-            return $this->available_tests;
-        }
+		foreach ( $files as $file ) {
+			$basename = basename( $file, '.php' );
 
-        foreach ( $files as $file ) {
-            $basename = basename( $file, '.php' );
+			// Skip the interface itself AND the standard index.php file
+			if ( $basename === 'BaseBenchmarkTest' || $basename === 'index' ) {
+				continue; // Skip to the next file
+			}
 
-            // Skip the interface itself and any non-class files
-            if ( $basename === 'BaseBenchmarkTest' ) {
-                continue;
-            }
+			$class_name = WPBENCH_BASE_NAMESPACE . 'BenchmarkTest\\' . $basename;
 
-            $class_name = WPBENCH_BASE_NAMESPACE . 'BenchmarkTest\\' . $basename;
+			// Check if class exists *before* trying reflection etc. Relies on autoloader.
+			if ( class_exists( $class_name ) ) {
+				try {
+					$reflection = new \ReflectionClass( $class_name );
+					// Ensure it's a concrete class implementing our interface
+					if ( $reflection->implementsInterface( BaseBenchmarkTest::class ) && !$reflection->isAbstract() ) {
 
-            if ( class_exists( $class_name ) ) {
-                try {
-                    $reflection = new \ReflectionClass( $class_name );
-                    if ( $reflection->implementsInterface( BaseBenchmarkTest::class ) && !$reflection->isAbstract() ) {
-                        // Instantiate ONLY to get info - use get_test_instance for actual use
-                        $test_instance_for_info = $reflection->newInstanceWithoutConstructor(); // Avoid constructor side-effects if any
-                        if(method_exists($test_instance_for_info, 'get_info')) {
-                             $info = $test_instance_for_info->get_info();
-                             if ( isset( $info['id'] ) && is_string($info['id']) ) {
-                                $this->available_tests[ $info['id'] ] = $info;
-                             } else {
-                                 trigger_error("WPBench: Test class $class_name get_info() did not return a valid string 'id'.", E_USER_WARNING);
-                             }
-                        } else {
-                             trigger_error("WPBench: Test class $class_name does not implement get_info() method.", E_USER_WARNING);
-                        }
-                    }
-                } catch (\ReflectionException $e) {
-                     trigger_error("WPBench: Reflection error for class $class_name: " . $e->getMessage(), E_USER_WARNING);
-                } catch (\Error $e) { // Catch potential errors during instantiation or get_info() call
-                     trigger_error("WPBench: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
-                }
-            } else {
-                 trigger_error("WPBench: Class $class_name not found after including file $file.", E_USER_WARNING);
-            }
-        }
+						// Instantiate ONLY to get info - avoids running constructor logic needlessly here
+						// Note: newInstanceWithoutConstructor is safer if constructors have side effects
+						// But if get_info() relies on constructor setup, need newInstance()
+						// Let's assume get_info is safe without full construction for now.
+						$test_instance_for_info = $reflection->newInstanceWithoutConstructor();
 
-        // Ensure a consistent order (optional, based on ID)
-        ksort($this->available_tests);
+						if(method_exists($test_instance_for_info, 'get_info')) {
+							$info = $test_instance_for_info->get_info();
+							// Validate the info structure basic requirements
+							if ( isset( $info['id'] ) && is_string($info['id']) && !empty($info['id']) ) {
+								$this->available_tests[ $info['id'] ] = $info; // Use the ID from get_info() as the key
+							} else {
+								trigger_error("WPBench: Test class $class_name get_info() did not return a valid string 'id'. Skipping.", E_USER_WARNING);
+							}
+						} else {
+							trigger_error("WPBench: Test class $class_name does not implement get_info() method. Skipping.", E_USER_WARNING);
+						}
+					}
+					// else: Class exists but doesn't implement interface or is abstract - ignore silently.
+				} catch (\ReflectionException $e) {
+					trigger_error("WPBench: Reflection error for class $class_name: " . $e->getMessage(), E_USER_WARNING);
+				} catch (\Throwable $e) { // Catch potential errors during instantiation or get_info() call (Throwable for PHP 7+)
+					trigger_error("WPBench: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
+				}
+			} else {
+				// This error now specifically means the autoloader found the file but couldn't load the expected class.
+				// Could be namespace typo in the file, or the file IS index.php / BaseBenchmarkTest.php which autoloader included but class_exists failed.
+				// Since we added specific checks for index/BaseBenchmarkTest, this warning is less likely now for those cases.
+				trigger_error("WPBench: Expected class $class_name not found after including/autoloading file $file. Check namespace and class definition.", E_USER_WARNING);
+			}
+		} // End foreach loop
 
-        return $this->available_tests;
-    }
+		// Ensure a consistent order (optional, based on ID)
+		ksort($this->available_tests);
+
+		return $this->available_tests;
+	}
 
 
     /**
