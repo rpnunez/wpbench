@@ -19,37 +19,38 @@ class Assets {
      */
     public function enqueue_admin_scripts( $hook ) {
         $screen = get_current_screen();
+        $is_wpbench_run_page = ($hook === 'toplevel_page_wpbench_main_menu');
+        $is_wpbench_result_edit = ($hook === 'post.php' && isset($screen->post_type) && $screen->post_type === AdminBenchmark::POST_TYPE);
+        $is_wpbench_profile_edit = ( ($hook === 'post.php' || $hook === 'post-new.php') && isset($screen->post_type) && $screen->post_type === BenchmarkProfileAdmin::POST_TYPE);
 
-        // Check if it's one of our plugin's admin pages
-        $is_wpbench_page = ($hook === 'toplevel_page_wpbench_main_menu' || strpos($hook, 'wpbench_page_') === 0);
-
-        // Check if it's the edit screen for our CPT
-        $is_wpbench_cpt_edit = ($hook === 'post.php' && isset($screen->post_type) && $screen->post_type === CustomPostType::POST_TYPE);
-        // $is_wpbench_cpt_new = ($hook === 'post-new.php' && isset($screen->post_type) && $screen->post_type === CustomPostType::POST_TYPE); // Not strictly needed for viewing results
-
-        // Scripts for the "Run New Benchmark" page
-        if ( $is_wpbench_page ) {
+        // --- Script for Run Page & Profile Edit Page ---
+        // This script now handles the profile loader on the run page.
+        if ( $is_wpbench_run_page || $is_wpbench_profile_edit ) {
             wp_enqueue_script(
-                'wpbench-admin-js',
-                WPBENCH_URL . 'js/admin-benchmark.js',
-                [ 'jquery' ],
-                WPBENCH_VERSION,
-                true // Load in footer
+                'wpbench-admin-js', WPBENCH_URL . 'js/admin-benchmark.js',
+                [ 'jquery' ], WPBENCH_VERSION, true
             );
 
-            // Localize script with data for AJAX calls
+            // Localize data needed by admin-benchmark.js
             wp_localize_script( 'wpbench-admin-js', 'wpbench_ajax', [
                 'ajax_url' => admin_url( 'admin-ajax.php' ),
-                'run_nonce' => wp_create_nonce( 'wpbench_run_action_ajax' ), // Nonce for AJAX verification
+                // Nonces
+                'run_nonce' => wp_create_nonce( 'wpbench_run_action_ajax' ),
+                'load_profile_nonce' => wp_create_nonce( 'wpbench_load_profile_nonce'), // <<< Added Nonce
+                // Text strings for JS
                 'running_text' => __('Running...', 'wpbench'),
                 'complete_text' => __('Benchmark Complete!', 'wpbench'),
                 'error_text' => __('An error occurred.', 'wpbench'),
                 'view_results_text' => __('View Results', 'wpbench'),
+                'select_profile_alert' => __('Please select a profile to load.', 'wpbench'), // <<< Added Text
+                'load_profile_error_alert' => __('Error loading profile:', 'wpbench'), // <<< Added Text
+                'ajax_error_alert' => __('AJAX error loading profile. Check browser console.', 'wpbench'), // <<< Added Text
+                'validation_select_test' => __('You must select at least one Benchmark Test to run.', 'wpbench'), // Added validation text
             ]);
         }
 
-        // Scripts and styles for the Benchmark Result CPT edit screen (to display charts)
-        if ( $is_wpbench_cpt_edit ) {
+        // Scripts for the Benchmark Result CPT edit screen (charts)
+        if ( $is_wpbench_result_edit ) {
             // ... (keep chart-js enqueue) ...
             wp_enqueue_script(
                 'wpbench-results-js',
@@ -57,21 +58,21 @@ class Assets {
                 [ 'jquery', 'chart-js' ],
                 WPBENCH_VERSION,
                 true
-               );
+            );
 
             // Pass result data from PHP to our results JS script
             global $post;
-            if ( $post && $post->ID && $post->post_type === CustomPostType::POST_TYPE ) {
-                $results_data = get_post_meta( $post->ID, '_wpbench_results', true );
+
+            if ( $post && $post->ID && $post->post_type === AdminBenchmark::POST_TYPE ) {
+                $results_data = get_post_meta( $post->ID, AdminBenchmark::META_RESULTS, true );
                 $config_data = get_post_meta( $post->ID, '_wpbench_config', true );
-                $selected_tests_data = get_post_meta( $post->ID, '_wpbench_selected_tests', true); // Get selected tests
+                $selected_tests_data = get_post_meta( $post->ID, AdminBenchmark::META_SELECTED_TESTS, true); // Get selected tests
 
                 wp_localize_script( 'wpbench-results-js', 'wpbench_results_data', [
                     'results' => is_array($results_data) ? $results_data : [],
                     'config'  => is_array($config_data) ? $config_data : [],
                     'selected_tests' => is_array($selected_tests_data) ? $selected_tests_data : [], // Pass selected tests
                     'text' => [
-                        // ... (keep existing text labels) ...
                         'cpu_time' => __('CPU Time (seconds)', 'wpbench'),
                         'memory_peak' => __('Peak Memory (MB)', 'wpbench'),
                         'file_io_time' => __('File I/O Time (seconds)', 'wpbench'),
