@@ -50,8 +50,9 @@ if ($delete_results) {
 			// Use wp_delete_post to ensure associated meta, terms, etc., are also cleaned up
 			// true = force delete, bypass trash
 			wp_delete_post($post_id, true);
+
 			// Add a small delay to prevent overwhelming server on large amounts? Optional.
-			// usleep(10000); // Sleep for 10ms
+			usleep(10000); // Sleep for 10ms
 		}
 	}
 }

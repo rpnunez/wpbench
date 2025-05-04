@@ -20,6 +20,10 @@ class WPBenchSettings {
 	/** The slug for the settings page. */
 	const PAGE_SLUG = 'wpbench_settings';
 
+	const SETTING_STATUS = 'status';
+	const SETTING_DELETE_RESULTS = 'delete_on_uninstall_benchmark_results';
+	const SETTING_DELETE_PROFILES = 'delete_on_uninstall_benchmark_profiles';
+
 	/**
 	 * Initialize hooks.
 	 */
@@ -36,9 +40,9 @@ class WPBenchSettings {
 	 */
 	public static function get_defaults() : array {
 		return [
-			'status' => 'enabled', // Default status for the plugin functionality
-			// Add other future settings here with their defaults
-			// 'some_other_setting' => 'default_value',
+			self::SETTING_STATUS          => 'enabled',
+			self::SETTING_DELETE_RESULTS  => 'no', // Default: Do not delete results
+			self::SETTING_DELETE_PROFILES => 'no', // Default: Do not delete profiles
 		];
 	}
 
@@ -93,15 +97,32 @@ class WPBenchSettings {
 			self::PAGE_SLUG                         // Page slug where this section appears
 		);
 
-		// Add Status Field
-		add_settings_field(
-			'wpbench_field_status',                 // Field ID
-			__('WPBench Status', 'wpbench'),        // Label for the field
-			[$this, 'render_status_field_callback'],// Callback function to render the input control
-			self::PAGE_SLUG,                        // Page slug
-			'wpbench_general_section',              // Section ID this field belongs to
-			['label_for' => 'wpbench_field_status_select'] // Associate label with the select input
+            // Add Status Field
+            add_settings_field(
+                'wpbench_field_status',                 // Field ID
+                __('WPBench Status', 'wpbench'),        // Label for the field
+                [$this, 'render_status_field_callback'],// Callback function to render the input control
+                self::PAGE_SLUG,                        // Page slug
+                'wpbench_general_section',              // Section ID this field belongs to
+                ['label_for' => 'wpbench_field_status_select'] // Associate label with the select input
+            );
+
+		// --- Advanced Section ---
+		add_settings_section(
+			'wpbench_advanced_section',                 // Section ID
+			__('Advanced Settings', 'wpbench'),         // Title
+			[$this, 'render_advanced_section_callback'],// Section description callback
+			self::PAGE_SLUG                             // Page slug
 		);
+
+            // Note: Both fields below are part of the same logical question in the UI
+            add_settings_field(
+                'wpbench_field_delete_on_uninstall',        // Field group ID
+                __('Data Deletion on Uninstall', 'wpbench'), // Label for the group
+                [$this, 'render_delete_options_callback'],  // Callback to render BOTH radio groups
+                self::PAGE_SLUG,
+                'wpbench_advanced_section'
+            );
 
 		// Add future fields here, linking them to sections
 		// add_settings_field( 'wpbench_field_other', __('Other Setting', 'wpbench'), ... );
@@ -144,6 +165,73 @@ class WPBenchSettings {
 		<?php
 	}
 
+	/** Render introductory text for the Advanced section. */
+	public function render_advanced_section_callback($args) {
+		echo '<p>' . esc_html__('Configure actions performed when the plugin is deleted via the WordPress admin area.', 'wpbench') . '</p>';
+		echo '<p><strong>' . esc_html__('Warning:', 'wpbench') . '</strong> ' . esc_html__('Enabling data deletion is permanent and cannot be undone.', 'wpbench') . '</p>';
+	}
+
+	/**
+	 * Render the radio buttons for the data deletion options.
+	 * Renders both sets of radio buttons under one field registration.
+	 */
+	public function render_delete_options_callback($args) {
+		$options = $this->get_options();
+		$delete_results_val = $options[self::SETTING_DELETE_RESULTS] ?? 'no';
+		$delete_profiles_val = $options[self::SETTING_DELETE_PROFILES] ?? 'no';
+
+		// Count posts safely
+		$results_count = 0;
+		$results_counts_obj = wp_count_posts(AdminBenchmark::POST_TYPE);
+		if ($results_counts_obj) {
+			$results_count = $results_counts_obj->publish + $results_counts_obj->draft + $results_counts_obj->pending + $results_counts_obj->private + $results_counts_obj->trash;
+		}
+
+		$profiles_count = 0;
+		$profiles_counts_obj = wp_count_posts(BenchmarkProfileAdmin::POST_TYPE);
+		if ($profiles_counts_obj) {
+			$profiles_count = $profiles_counts_obj->publish + $profiles_counts_obj->draft + $profiles_counts_obj->pending + $profiles_counts_obj->private + $profiles_counts_obj->trash;
+		}
+
+		$results_field_name = self::OPTION_NAME . '[' . self::SETTING_DELETE_RESULTS . ']';
+		$profiles_field_name = self::OPTION_NAME . '[' . self::SETTING_DELETE_PROFILES . ']';
+
+		?>
+        <fieldset>
+            <legend class="screen-reader-text"><?php esc_html_e('Data Deletion Options', 'wpbench'); ?></legend>
+            <p><?php esc_html_e('On plugin uninstallation, should the plugin delete:', 'wpbench'); ?></p>
+
+            <div style="margin-bottom: 15px; margin-left: 10px;">
+                <label style="display: block; margin-bottom: 5px;">
+					<?php printf(esc_html__('All Benchmark Results? You currently have %d Benchmark Results.', 'wpbench'), (int)$results_count); ?>
+                </label>
+                <label style="margin-right: 15px;">
+                    <input type="radio" name="<?php echo esc_attr($results_field_name); ?>" value="yes" <?php checked($delete_results_val, 'yes'); ?>>
+					<?php esc_html_e('Yes', 'wpbench'); ?>
+                </label>
+                <label>
+                    <input type="radio" name="<?php echo esc_attr($results_field_name); ?>" value="no" <?php checked($delete_results_val, 'no'); ?>>
+					<?php esc_html_e('No', 'wpbench'); ?>
+                </label>
+            </div>
+
+            <div style="margin-left: 10px;">
+                <label style="display: block; margin-bottom: 5px;">
+					<?php printf(esc_html__('All Benchmark Profiles? You currently have %d Benchmark Profiles.', 'wpbench'), (int)$profiles_count); ?>
+                </label>
+                <label style="margin-right: 15px;">
+                    <input type="radio" name="<?php echo esc_attr($profiles_field_name); ?>" value="yes" <?php checked($delete_profiles_val, 'yes'); ?>>
+					<?php esc_html_e('Yes', 'wpbench'); ?>
+                </label>
+                <label>
+                    <input type="radio" name="<?php echo esc_attr($profiles_field_name); ?>" value="no" <?php checked($delete_profiles_val, 'no'); ?>>
+					<?php esc_html_e('No', 'wpbench'); ?>
+                </label>
+            </div>
+        </fieldset>
+		<?php
+	}
+
 	/**
 	 * Sanitize the settings array before saving.
 	 *
@@ -167,43 +255,47 @@ class WPBenchSettings {
 			return $sanitized_output;
 		}
 
-		// --- Sanitize Status ---
-		if (isset($input['status'])) {
-			$status_value = sanitize_key($input['status']); // Use sanitize_key for simple slugs
-
-			if (in_array($status_value, ['enabled', 'disabled'])) {
-                $sanitized_output['status'] = $status_value;
-			} else {
-                // Invalid value submitted, revert to default or existing? Revert to default.
-                $sanitized_output['status'] = self::get_defaults()['status'];
-                add_settings_error(
-                    self::OPTION_NAME,
-                    'invalid_status',
-                    __('Invalid value selected for WPBench Status. Reverted to default.', 'wpbench'),
-                    'warning' // Use warning as we corrected it
-                );
-			}
-		} else {
-			// If 'status' wasn't submitted (e.g., field disabled/removed), keep the existing value
-			// $sanitized_output['status'] = $existing_options['status']; // Already handled by starting with existing
+		// Sanitize Status
+		if (isset($input[self::SETTING_STATUS])) {
+			$status_value = sanitize_key($input[self::SETTING_STATUS]);
+			$sanitized_output[self::SETTING_STATUS] = in_array($status_value, ['enabled', 'disabled']) ? $status_value : self::get_defaults()[self::SETTING_STATUS];
 		}
 
-		// --- Sanitize Other Future Settings ---
-		// if (isset($input['some_other_setting'])) {
-		//    $sanitized_output['some_other_setting'] = sanitize_text_field($input['some_other_setting']);
-		// }
+		// Sanitize Delete Results Option
+		if (isset($input[self::SETTING_DELETE_RESULTS])) {
+			$delete_results_value = sanitize_key($input[self::SETTING_DELETE_RESULTS]);
+			$sanitized_output[self::SETTING_DELETE_RESULTS] = ($delete_results_value === 'yes') ? 'yes' : 'no'; // Default to 'no' if not 'yes'
+		} else {
+			// Ensure default if not present in submission
+			$sanitized_output[self::SETTING_DELETE_RESULTS] = $existing_options[self::SETTING_DELETE_RESULTS] ?? self::get_defaults()[self::SETTING_DELETE_RESULTS];
+		}
 
-		// Add success message
-		add_settings_error(
-			self::OPTION_NAME,
-			'settings_saved', // Slug-like ID
-			__('Settings saved successfully.', 'wpbench'),
-			'updated' // 'updated' for success, 'error' for errors, 'warning'
-		);
+		// Sanitize Delete Profiles Option
+		if (isset($input[self::SETTING_DELETE_PROFILES])) {
+			$delete_profiles_value = sanitize_key($input[self::SETTING_DELETE_PROFILES]);
+			$sanitized_output[self::SETTING_DELETE_PROFILES] = ($delete_profiles_value === 'yes') ? 'yes' : 'no';
+		} else {
+			$sanitized_output[self::SETTING_DELETE_PROFILES] = $existing_options[self::SETTING_DELETE_PROFILES] ?? self::get_defaults()[self::SETTING_DELETE_PROFILES];
+		}
+
+
+		// Add success message only if no errors were added during sanitization
+		$errors = get_settings_errors(self::OPTION_NAME);
+		$has_errors = false;
+
+		foreach ($errors as $error) {
+			if ($error['type'] === 'error') {
+				$has_errors = true;
+				break;
+			}
+		}
+
+		if (!$has_errors) {
+			add_settings_error(self::OPTION_NAME, 'settings_saved', __('Settings saved.', 'wpbench'), 'updated');
+		}
 
 		return $sanitized_output;
 	}
-
 
 	/**
 	 * Render the HTML for the settings page.
