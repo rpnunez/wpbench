@@ -4,12 +4,11 @@ namespace WPBench;
 // Required classes (ensure autoloader works for these)
 use WPBench\AdminBenchmark;
 use WPBench\BenchmarkProfileAdmin;
-use WPBench\CustomPostType; // Keep for reference if needed, but registration moved
-use WPBench\ProfileCPT;    // Keep for reference if needed, but registration moved
 use WPBench\PluginState;
 use WPBench\PluginStateView;
 use WPBench\PluginManager;
 use WPBench\TestRegistry;
+use WPBench\WPBenchSettings;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,38 +16,45 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Main Plugin Class for WPBench.
- * Handles initialization, hooks, activation, deactivation. Orchestrates other classes.
+ * Represents the core Plugin class to initialize and manage the plugin functionality.
+ *
+ * Implements the Singleton design pattern to ensure only one instance exists during execution.
  */
 final class Plugin {
 
     private static $instance = null;
-    private $plugin_state_handler;
-    private $assets_handler;
-    private $admin_benchmark_handler;
-    private $admin_profile_handler;
+    private $pluginStateHandler;
+    private $assetsHandler;
+    private $adminBenchmarkHandler;
+    private $adminProfileHandler;
     private $testRegistry;
-
+	private $settings_handler;
 
     /**
-     * Private constructor. Sets up handlers and registers hooks.
+     * Constructs the main plugin object.
+     * Initializes core utilities, views, managers, and controllers required by the plugin.
+     * Establishes dependencies between components and ensures necessary resources are loaded.
+     *
+     * This constructor is private to enforce singleton design patterns or controlled instantiation elsewhere in the plugin.
+     *
+     * @return void
      */
     private function __construct() {
         // Instantiate core utilities first
         $this->testRegistry = new TestRegistry();
-        $this->plugin_state_handler = new PluginState();
+        $this->pluginStateHandler = new PluginState();
+	    $this->settings_handler = new WPBenchSettings(); // <-- Instantiate Settings handler
 
         // Instantiate view/manager that might depend on core utilities
-        $pluginStateView = new PluginStateView($this->plugin_state_handler, $this->testRegistry);
+        $pluginStateView = new PluginStateView($this->pluginStateHandler, $this->testRegistry);
         $pluginManager = new PluginManager(); // Contains risky operations
 
         // Instantiate asset handler
-        $this->assets_handler = new Assets();
+        $this->assetsHandler = new Assets();
 
         // Instantiate main admin controllers, passing dependencies
-        $this->admin_benchmark_handler = new AdminBenchmark($this->plugin_state_handler, $pluginStateView, $this->testRegistry, $pluginManager);
-        $this->admin_profile_handler = new BenchmarkProfileAdmin($this->plugin_state_handler, $pluginStateView, $this->testRegistry);
-
+        $this->adminBenchmarkHandler = new AdminBenchmark($this->pluginStateHandler, $pluginStateView, $this->testRegistry, $pluginManager);
+        $this->adminProfileHandler = new BenchmarkProfileAdmin($this->pluginStateHandler, $pluginStateView, $this->testRegistry);
 
         $this->loadPlugin();
     }
@@ -65,82 +71,83 @@ final class Plugin {
     }
 
     /**
-     * Loads the plugin by registering hooks and filters, delegating to handler classes.
+     * Loads and initializes the plugin's functionality.
+     * This method sets up necessary WordPress hooks for registering custom post types, meta fields,
+     * admin menus, scripts, AJAX handlers, and custom columns in the admin area. It also establishes
+     * actions required for handling plugin state and result data.
+     *
+     * @return void
      */
     private function loadPlugin() {
         // --- Register Custom Post Types ---
         // These methods now reside in the Admin classes
-        add_action( 'init', [ $this->admin_benchmark_handler, 'register_cpt' ] );
-        add_action( 'init', [ $this->admin_profile_handler, 'register_cpt' ] );
+        add_action( 'init', [ $this->adminBenchmarkHandler, 'register_cpt' ] );
+        add_action( 'init', [ $this->adminProfileHandler, 'register_cpt' ] );
 
         // --- Register Meta Fields ---
         // Hooking late on init ensures CPTs and potentially TestRegistry are ready
-        add_action( 'init', [ $this->admin_benchmark_handler, 'register_meta_fields' ], 20 );
-        add_action( 'init', [ $this->admin_profile_handler, 'register_meta_fields' ], 20 );
+        add_action( 'init', [ $this->adminBenchmarkHandler, 'register_meta_fields' ], 20 );
+        add_action( 'init', [ $this->adminProfileHandler, 'register_meta_fields' ], 20 );
 
         // --- Admin Menu ---
-        add_action( 'admin_menu', [ $this->admin_benchmark_handler, 'add_admin_menu' ] );
+        add_action( 'admin_menu', [ $this->adminBenchmarkHandler, 'add_admin_menu' ] );
+
+	    // --- Initialize Settings Page ---
+	    $this->settings_handler->init();
 
         // --- Profile Admin Hooks ---
         // Use class constants for post type hooks
-        add_action( 'add_meta_boxes_' . BenchmarkProfileAdmin::POST_TYPE, [ $this->admin_profile_handler, 'add_profile_meta_boxes' ] );
-        add_action( 'save_post_' . BenchmarkProfileAdmin::POST_TYPE, [ $this->admin_profile_handler, 'save_profile_meta' ], 10, 2 );
+        add_action( 'add_meta_boxes_' . BenchmarkProfileAdmin::POST_TYPE, [ $this->adminProfileHandler, 'add_profile_meta_boxes' ] );
+        add_action( 'save_post_' . BenchmarkProfileAdmin::POST_TYPE, [ $this->adminProfileHandler, 'save_profile_meta' ], 10, 2 );
 
         // --- Assets ---
-        add_action( 'admin_enqueue_scripts', [ $this->assets_handler, 'enqueue_admin_scripts' ] );
+        add_action( 'admin_enqueue_scripts', [ $this->assetsHandler, 'enqueue_admin_scripts' ] );
 
         // --- AJAX Handlers ---
-        add_action( 'wp_ajax_wpbench_run_benchmark', [ $this->admin_benchmark_handler, 'handle_ajax_run_benchmark' ] );
-        add_action( 'wp_ajax_wpbench_load_profile', [ $this->admin_profile_handler, 'handle_ajax_load_profile' ] );
-
-        // --- Result Admin Hooks ---
-        // Use class constants for post type hooks
-        add_action( 'add_meta_boxes_' . AdminBenchmark::POST_TYPE, [ $this->admin_benchmark_handler, 'add_results_meta_box' ] );
-        add_filter( 'manage_' . AdminBenchmark::POST_TYPE . '_posts_columns', [ $this->admin_benchmark_handler, 'set_custom_edit_benchmark_result_columns' ] );
-        add_action( 'manage_' . AdminBenchmark::POST_TYPE . '_posts_custom_column', [ $this->admin_benchmark_handler, 'custom_benchmark_result_column' ], 10, 2 );
-        // Hook points to method in PluginState, but uses the Result CPT constant from AdminBenchmark
-        add_action( 'save_post_' . AdminBenchmark::POST_TYPE, [ $this->plugin_state_handler, 'saveActualPluginsListHook' ], 10, 2 );
+        add_action( 'wp_ajax_wpbench_run_benchmark', [ $this->adminBenchmarkHandler, 'handle_ajax_request' ] );
     }
 
     /**
-     * Plugin Activation Tasks.
-     * Runs once when the plugin is activated.
-     * Static method called by register_activation_hook.
+     * Activates the plugin by registering custom post types (CPTs), flushing rewrite rules,
+     * and performing initial setup tasks such as creating dummy JavaScript files.
+     *
+     * This method ensures that the CPTs are registered before flushing rewrite rules,
+     * allowing WordPress to recognize them immediately. Additionally, it handles
+     * the creation of required JavaScript files if they do not already exist.
+     *
+     * @return void
      */
     public static function activatePlugin() {
         // Instantiate admin classes *only* to call their CPT registration methods.
         // This ensures the CPTs are known to WordPress before flushing rules.
         // We avoid calling register_meta_fields here as it's not needed for flushing
         // and might have unmet dependencies in this static context.
-        $admin_benchmark_temp = new AdminBenchmark();
-        $admin_benchmark_temp->register_cpt();
+        $AdminBenchmarkTmp = new AdminBenchmark();
+        $AdminBenchmarkTmp->register_cpt();
 
-        $admin_profile_temp = new BenchmarkProfileAdmin();
-        $admin_profile_temp->register_cpt();
+        $AdminProfileTemp = new BenchmarkProfileAdmin();
+        $AdminProfileTemp->register_cpt();
 
         // Flush rewrite rules to recognize the CPTs immediately
         flush_rewrite_rules();
 
-        // --- Create dummy JS files on activation if they don't exist ---
-        // Moved from wpbench.php
-        $js_dir = WPBENCH_PATH . 'js/';
-        $js_admin_path = $js_dir . 'admin-benchmark.js';
-        $js_results_path = $js_dir . 'admin-results.js';
-        if (!is_dir($js_dir)) { @wp_mkdir_p($js_dir); } // Use @ to suppress errors if exists/perms issue
-        if (!file_exists($js_admin_path)) { @file_put_contents($js_admin_path, '// WPBench Admin Benchmark JS - Autocreated on Activation'); }
-        if (!file_exists($js_results_path)) { @file_put_contents($js_results_path, '// WPBench Admin Results JS - Autocreated on Activation'); }
-        // --- End Dummy JS File Creation ---
         // Other potential activation tasks: set default options, schedule cron jobs, etc.
+
+	    // Set default options on activation
+	    if ( false === get_option( WPBenchSettings::OPTION_NAME ) ) {
+	        update_option( WPBenchSettings::OPTION_NAME, WPBenchSettings::get_defaults() );
+	    }
     }
 
     /**
      * Plugin Deactivation Tasks.
      * Runs once when the plugin is deactivated.
-     * Static method called by register_deactivation_hook.
+     *
+     * @used-by register_activation_hook
      */
     public static function deactivatePlugin() {
         // Flush rewrite rules to remove CPT rules if plugin is deactivated
-         flush_rewrite_rules();
+        flush_rewrite_rules();
 
         // Other deactivation tasks: unschedule cron jobs, remove temporary data (but not settings/posts usually)
     }
@@ -148,17 +155,23 @@ final class Plugin {
     /**
      * Placeholder for Plugin Uninstall Tasks. (SHOULD BE IN uninstall.php)
      * Static method - not typically called directly. Use uninstall.php instead.
+     *
+     * @used-by register_deactivation_hook
      */
     public static function uninstallPlugin() {
         // Check if the user intended to uninstall
-        if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) { exit; }
+        if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+            exit;
+        }
+
         // Delete options, CPT posts (with caution!), custom tables etc.
     }
 
     // --- Singleton pattern guards ---
     private function __clone() {}
+
     public function __wakeup() {
-         trigger_error("Unserializing is not allowed.", E_USER_ERROR);
+        trigger_error("Unserializing is not allowed.", E_USER_ERROR);
     }
     // --- End Singleton pattern guards ---
 

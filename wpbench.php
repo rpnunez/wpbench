@@ -85,3 +85,35 @@ add_action( 'plugins_loaded', 'wpbench_run_plugin' );
 // These hooks MUST point to static methods or global functions defined BEFORE the hook is registered. They
 register_activation_hook( __FILE__, [ WPBENCH_BASE_NAMESPACE . 'Plugin', 'activatePlugin' ] );
 register_deactivation_hook( __FILE__, [ WPBENCH_BASE_NAMESPACE . 'Plugin', 'deactivatePlugin' ] );
+
+// --- WPBench Settings Helper Function ---
+/**
+ * Get a specific WPBench setting value, falling back to defaults.
+ *
+ * @param string $setting_key The key of the setting to retrieve (e.g., 'status').
+ * @param mixed  $default     Optional. A default value to return if the setting is not found.
+ * @return mixed The value of the setting or the default.
+ */
+function wpbench_option( string $setting_key, $default = null ) {
+	// Ensure the Settings class is loaded (should be by autoloader)
+	if (!class_exists(WPBENCH_BASE_NAMESPACE . 'WPBenchSettings')) {
+		// Optionally log an error if class isn't available
+		error_log('WPBench Error: WPBenchSettings class not found in wpbench_option function.');
+		return $default; // Return explicit default if class is missing
+	}
+
+	static $options = null; // Cache options within a single request
+
+	if ($options === null) {
+		$saved_options = get_option( \WPBench\WPBenchSettings::OPTION_NAME, [] );
+		$defaults = \WPBench\WPBenchSettings::get_defaults(); // Use static method
+
+		// Ensure saved options are an array before parsing
+		$saved_options = is_array($saved_options) ? $saved_options : [];
+
+		$options = wp_parse_args($saved_options, $defaults);
+	}
+
+	return $options[$setting_key] ?? $default;
+}
+// --- End Helper Function ---

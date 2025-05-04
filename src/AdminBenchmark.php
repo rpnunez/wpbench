@@ -1,14 +1,7 @@
 <?php
 namespace WPBench;
 
-// Required classes
 use WPBench\BenchmarkTest\BaseBenchmarkTest;
-use WPBench\ProfileCPT; // Need access to Profile CPT constant
-use WPBench\BenchmarkProfileAdmin; // Need access to Profile meta constants
-use WPBench\PluginState;
-use WPBench\PluginStateView;
-use WPBench\PluginManager;
-use WPBench\TestRegistry;
 use WP_Error;
 use WP_Post; // Type hint for post objects
 
@@ -46,6 +39,7 @@ class AdminBenchmark {
     /**
      * Register the Benchmark Result Custom Post Type.
      * Hooked into 'init'.
+     * @noinspection SqlNoDataSourceInspection
      */
     public function register_cpt() {
         $labels = [
@@ -91,6 +85,7 @@ class AdminBenchmark {
             'show_in_rest'       => true, // Allow REST API access for meta, etc.
             'menu_icon'          => 'dashicons-performance',
         ];
+
         register_post_type( self::POST_TYPE, $args );
     }
 
@@ -99,94 +94,95 @@ class AdminBenchmark {
      * Hooked into 'init'.
      */
     public function register_meta_fields() {
-         // Meta field for storing the configuration used for this specific run
-        register_post_meta( self::POST_TYPE, self::META_CONFIG, [
-            'type'              => 'object', // Store as object/array
-            'description'       => __('Configuration array used for this benchmark run.', 'wpbench'),
-            'single'            => true, // Store a single value
-            'show_in_rest'      => [ // Expose to REST API
-                'schema' => [
-                    'type'       => 'object',
-                    'properties' => [ // Define expected properties (can be basic)
-                        'benchmark_name' => ['type' => 'string'],
-                        'config_cpu' => ['type' => 'integer'],
-                        'config_memory' => ['type' => 'integer'],
-                        'config_file_io' => ['type' => 'integer'],
-                        'config_db_read' => ['type' => 'integer'],
-                        'config_db_write' => ['type' => 'integer'],
-                    ],
-                     // Allow additional properties if structure varies
-                    'additionalProperties' => true,
-                ],
-            ],
-            'sanitize_callback' => [$this, 'sanitize_array_meta'], // Use a generic sanitizer
-            // 'auth_callback' => function() { return current_user_can('edit_posts'); } // Default auth is fine
-        ]);
+		// Meta field for storing the configuration used for this specific run
+		register_post_meta( self::POST_TYPE, self::META_CONFIG, [
+			'type'              => 'object', // Store as object/array
+			'description'       => __('Configuration array used for this benchmark run.', 'wpbench'),
+			'single'            => true, // Store a single value
+			'show_in_rest'      => [ // Expose to REST API
+				'schema' => [
+				    'type'       => 'object',
+				    'properties' => [ // Define expected properties (can be basic)
+				        'benchmark_name' => ['type' => 'string'],
+				        'config_cpu' => ['type' => 'integer'],
+				        'config_memory' => ['type' => 'integer'],
+				        'config_file_io' => ['type' => 'integer'],
+				        'config_db_read' => ['type' => 'integer'],
+				        'config_db_write' => ['type' => 'integer'],
+				    ],
+					// Allow additional properties if structure varies
+				    'additionalProperties' => true,
+				],
+			],
+			'sanitize_callback' => [$this, 'sanitize_array_meta'], // Use a generic sanitizer
+			// 'auth_callback' => function() { return current_user_can('edit_posts'); } // Default auth is fine
+		]);
 
-         // Meta field for storing the results array (including errors)
-        register_post_meta( self::POST_TYPE, self::META_RESULTS, [
-            'type'              => 'object',
-            'description'       => __('Results data including timings, usage, and errors.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => true, // Expose complex object schema if needed
-            'sanitize_callback' => [$this, 'sanitize_array_meta'],
-        ]);
+		// Meta field for storing the results array (including errors)
+		register_post_meta( self::POST_TYPE, self::META_RESULTS, [
+			'type'              => 'object',
+			'description'       => __('Results data including timings, usage, and errors.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => true, // Expose complex object schema if needed
+			'sanitize_callback' => [$this, 'sanitize_array_meta'],
+		]);
 
-        // Meta field for storing which tests were selected for this run
-        register_post_meta( self::POST_TYPE, self::META_SELECTED_TESTS, [
-            'type'              => 'array',
-            'description'       => __('Array of test IDs selected for this run.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => [
-                'schema' => [
-                    'type'  => 'array',
-                    'items' => ['type' => 'string'],
-                ],
-            ],
-            'sanitize_callback' => [$this, 'sanitize_string_array_meta'],
-        ]);
+		// Meta field for storing which tests were selected for this run
+		register_post_meta( self::POST_TYPE, self::META_SELECTED_TESTS, [
+			'type'              => 'array',
+			'description'       => __('Array of test IDs selected for this run.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => [
+			    'schema' => [
+			        'type'  => 'array',
+			        'items' => ['type' => 'string'],
+			    ],
+			],
+			'sanitize_callback' => [$this, 'sanitize_string_array_meta'],
+		]);
 
-         // Meta field for storing the ID of the profile used (if any)
-        register_post_meta( self::POST_TYPE, self::META_PROFILE_ID_USED, [
-            'type'              => 'integer',
-            'description'       => __('ID of the Benchmark Profile used for this run, if any.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => true,
-            'sanitize_callback' => 'absint', // Ensure it's a positive integer
-        ]);
+		// Meta field for storing the ID of the profile used (if any)
+		register_post_meta( self::POST_TYPE, self::META_PROFILE_ID_USED, [
+			'type'              => 'integer',
+			'description'       => __('ID of the Benchmark Profile used for this run, if any.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => true,
+			'sanitize_callback' => 'absint', // Ensure it's a positive integer
+		]);
 
-        // Meta field for storing the profile's configuration DATA at the time of the run
-        register_post_meta( self::POST_TYPE, self::META_PROFILE_STATE_DURING_RUN, [
-            'type'              => 'object', // Saving the data array, not a serialized object instance
-            'description'       => __('Configuration data array from the profile used during this run.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => true, // Adjust schema if needed
-            'sanitize_callback' => [$this, 'sanitize_array_meta'],
-        ]);
+		// Meta field for storing the profile's configuration DATA at the time of the run
+		register_post_meta( self::POST_TYPE, self::META_PROFILE_STATE_DURING_RUN, [
+			'type'              => 'object', // Saving the data array, not a serialized object instance
+			'description'       => __('Configuration data array from the profile used during this run.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => true, // Adjust schema if needed
+			'sanitize_callback' => [$this, 'sanitize_array_meta'],
+		]);
 
-        // Register meta keys managed primarily by PluginState (for REST API visibility etc.)
-        register_post_meta( self::POST_TYPE, PluginState::DESIRED_PLUGINS_META_KEY, [
-            'type'              => 'array',
-            'description'       => __('Array of plugin file paths desired to be active for the run.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => [ 'schema' => [ 'type'  => 'array', 'items' => ['type' => 'string'], ], ],
-            'sanitize_callback' => [$this, 'sanitize_string_array_meta'],
-        ]);
-        register_post_meta( self::POST_TYPE, PluginState::PRE_BENCHMARK_STATE_META_KEY, [
-            'type'              => 'string', // Stored as JSON string
-            'description'       => __('JSON string representing plugin state before the run.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => false, // Probably not needed in REST
-            'sanitize_callback' => 'sanitize_text_field', // Basic sanitize for JSON string
-        ]);
-        register_post_meta( self::POST_TYPE, PluginState::ACTUAL_PLUGINS_META_KEY, [
-            'type'              => 'array',
-            'description'       => __('Array of plugin info {name, version, file} active after restoration attempt.', 'wpbench'),
-            'single'            => true,
-            'show_in_rest'      => true, // Might be useful
-            'sanitize_callback' => [$this, 'sanitize_plugin_list_meta'],
-        ]);
+		// Register meta keys managed primarily by PluginState (for REST API visibility etc.)
+		register_post_meta( self::POST_TYPE, PluginState::DESIRED_PLUGINS_META_KEY, [
+			'type'              => 'array',
+			'description'       => __('Array of plugin file paths desired to be active for the run.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => [ 'schema' => [ 'type'  => 'array', 'items' => ['type' => 'string'], ], ],
+			'sanitize_callback' => [$this, 'sanitize_string_array_meta'],
+		]);
 
+		register_post_meta( self::POST_TYPE, PluginState::PRE_BENCHMARK_STATE_META_KEY, [
+			'type'              => 'string', // Stored as JSON string
+			'description'       => __('JSON string representing plugin state before the run.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => false, // Probably not needed in REST
+			'sanitize_callback' => 'sanitize_text_field', // Basic sanitize for JSON string
+		]);
+
+		register_post_meta( self::POST_TYPE, PluginState::ACTUAL_PLUGINS_META_KEY, [
+			'type'              => 'array',
+			'description'       => __('Array of plugin info {name, version, file} active after restoration attempt.', 'wpbench'),
+			'single'            => true,
+			'show_in_rest'      => true, // Might be useful
+			'sanitize_callback' => [$this, 'sanitize_plugin_list_meta'],
+		]);
     }
 
     /** Generic sanitizer for array/object meta */
@@ -226,16 +222,19 @@ class AdminBenchmark {
             __( 'WPBench', 'wpbench' ), __( 'WPBench', 'wpbench' ), 'manage_options',
             'wpbench_main_menu', [ $this, 'render_run_benchmark_page' ], 'dashicons-dashboard', 75
         );
+
         // Submenu for running a new benchmark (points to the main page callback)
         add_submenu_page(
             'wpbench_main_menu', __( 'Run New Benchmark', 'wpbench' ), __( 'Run New Benchmark', 'wpbench' ), 'manage_options',
             'wpbench_main_menu', [ $this, 'render_run_benchmark_page' ]
         );
+
         // Submenu linking to the Benchmark Profiles CPT list table
          add_submenu_page(
             'wpbench_main_menu', __( 'Benchmark Profiles', 'wpbench' ), __( 'Profiles', 'wpbench' ), 'manage_options',
             'edit.php?post_type=' . BenchmarkProfileAdmin::POST_TYPE, null
         );
+
         // Submenu linking to the Benchmark Results CPT list table
         add_submenu_page(
             'wpbench_main_menu', __( 'All Benchmarks', 'wpbench' ), __( 'All Benchmarks', 'wpbench' ), 'manage_options',
@@ -262,67 +261,69 @@ class AdminBenchmark {
 
     /** AJAX handler for running the benchmark tests. */
     public function handle_ajax_run_benchmark() {
-        // 1. Security Checks & Basic Input Validation
-        // Ensure user can activate/deactivate plugins
-        if ( ! current_user_can( 'manage_options' ) || !current_user_can('activate_plugins') || !current_user_can('deactivate_plugins')) {
-            wp_send_json_error( [ 'message' => __( 'Permission denied. You need capabilities to manage plugins.', 'wpbench' ) ], 403 );
-        }
+		// 1. Security Checks & Basic Input Validation
+		// Ensure user can activate/deactivate plugins
+		if ( ! current_user_can( 'manage_options' ) || ! current_user_can( 'activate_plugins' ) || ! current_user_can( 'deactivate_plugins' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied. You need capabilities to manage plugins.', 'wpbench' ) ], 403 );
+		}
 
-        // Verify AJAX nonce separately as check_ajax_referer exits on failure
-        if (!check_ajax_referer( 'wpbench_run_action_ajax', 'nonce', false )) {
-            wp_send_json_error( [ 'message' => __( 'Nonce verification failed.', 'wpbench' ) ], 403 );
-        }
+		// Verify AJAX nonce separately as check_ajax_referer exits on failure
+		if ( ! check_ajax_referer( 'wpbench_run_action_ajax', 'nonce', false ) ) {
+			wp_send_json_error( [ 'message' => __( 'Nonce verification failed.', 'wpbench' ) ], 403 );
+		}
 
-        $selected_tests_raw = isset($_POST['selected_tests']) && is_array($_POST['selected_tests']) ? $_POST['selected_tests'] : [];
-        $desired_plugins_raw = isset($_POST['desired_plugins']) && is_array($_POST['desired_plugins']) ? $_POST['desired_plugins'] : [];
-        $profile_id_used = isset($_POST['profile_id_used']) ? absint($_POST['profile_id_used']) : null;
+		$selected_tests_raw  = isset( $_POST['selected_tests'] ) && is_array( $_POST['selected_tests'] ) ? $_POST['selected_tests'] : [];
+		$desired_plugins_raw = isset( $_POST['desired_plugins'] ) && is_array( $_POST['desired_plugins'] ) ? $_POST['desired_plugins'] : [];
+		$profile_id_used     = isset( $_POST['profile_id_used'] ) ? absint( $_POST['profile_id_used'] ) : null;
 
-        $profile_id_used = isset($_POST['profile_id_used']) ? absint($_POST['profile_id_used']) : null;
-        if ( empty($selected_tests_raw) ) { 
-            wp_send_json_error( [ 'message' => __( 'No benchmark tests were selected to run.', 'wpbench' ) ], 400 );
-        }
+		if ( empty( $selected_tests_raw ) ) {
+		    wp_send_json_error( [ 'message' => __( 'No benchmark tests were selected to run.', 'wpbench' ) ], 400 );
+		}
 
-        // --- 2. Create Post Early ---
-        $benchmark_name = isset($_POST['benchmark_name']) ? sanitize_text_field(wp_unslash($_POST['benchmark_name'])) : 'Unnamed Benchmark';
-        $post_data = [ 'post_title' => $benchmark_name, 'post_type' => self::POST_TYPE, 'post_status' => 'publish', 'post_author' => get_current_user_id() ];
-        $post_id = wp_insert_post( $post_data, true );
+	    // --- 2. Create Post Early ---
+	    $benchmark_name = isset( $_POST['benchmark_name'] ) ? sanitize_text_field( wp_unslash( $_POST['benchmark_name'] ) ) : 'Unnamed Benchmark';
+	    $post_data      = [ 'post_title'  => $benchmark_name,
+	                        'post_type'   => self::POST_TYPE,
+	                        'post_status' => 'publish',
+	                        'post_author' => get_current_user_id()
+	    ];
+	    $post_id        = wp_insert_post( $post_data, true );
 
-        if ( is_wp_error( $post_id ) || $post_id === 0 ) { 
-            wp_send_json_error( [ 'message' => __( 'Error creating benchmark result post:', 'wpbench' ) . (is_wp_error($post_id)?' '.$post_id->get_error_message():'') ], 500 );
-        }
+		if ( is_wp_error( $post_id ) || $post_id === 0 ) {
+		    wp_send_json_error( [ 'message' => __( 'Error creating benchmark result post:', 'wpbench' ) . ( is_wp_error( $post_id ) ? ' ' . $post_id->get_error_message() : '' ) ], 500 );
+		}
 
-        // --- 3. Save Initial States, Config, and Profile Data ---
-        $preBenchmarkState = $this->pluginState->savePreBenchmarkState($post_id); // Save pre-run state
+	    // --- 3. Save Initial States, Config, and Profile Data ---
+	    $preBenchmarkState = $this->pluginState->savePreBenchmarkState( $post_id ); // Save pre-run state
+	    $all_plugin_files  = array_keys( get_plugins() );
+	    $desired_plugins   = array_intersect( $desired_plugins_raw, $all_plugin_files );
 
-        $all_plugin_files = array_keys(get_plugins());
-        $desired_plugins = array_intersect($desired_plugins_raw, $all_plugin_files);
+	    if ( is_multisite() && ! current_user_can( 'manage_network_plugins' ) ) {
+		    $current_network = $preBenchmarkState['active_network'] ?? [];
+		    $desired_plugins = array_unique( array_merge( $desired_plugins, $current_network ) );
+	    }
 
-        if (is_multisite() && !current_user_can('manage_network_plugins')) { 
-            $current_network = $preBenchmarkState['active_network'] ?? [];
-            $desired_plugins = array_unique(array_merge($desired_plugins, $current_network));
-        }
+	    $this->pluginState->saveDesiredState( $post_id, $desired_plugins ); // Save desired state
 
-        $this->pluginState->saveDesiredState($post_id, $desired_plugins); // Save desired state
+	    $available_tests = $this->testRegistry->get_available_tests();
+	    $valid_test_ids  = array_keys( $available_tests );
+	    $selected_tests  = array_intersect( $selected_tests_raw, $valid_test_ids );
+	    $config          = [ 'benchmark_name' => $benchmark_name ];
 
-        $available_tests = $this->testRegistry->get_available_tests();
-        $valid_test_ids = array_keys($available_tests);
-        $selected_tests = array_intersect( $selected_tests_raw, $valid_test_ids );
-        $config = [ 'benchmark_name' => $benchmark_name ];
+		foreach ( $available_tests as $id => $info ) {
+			$config_key            = 'config_' . $id;
+			$config[ $config_key ] = isset( $_POST[ $config_key ] ) ? absint( $_POST[ $config_key ] ) : ( $info['default_value'] ?? 0 );
+			$config[ $config_key ] = max( $info['min_value'] ?? 0, $config[ $config_key ] );
+			$config[ $config_key ] = min( $info['max_value'] ?? 1000000, $config[ $config_key ] );
+		}
 
-        foreach ($available_tests as $id => $info) { 
-            $meta_key = self::META_CONFIG_PREFIX . $id;
-            $saved_value = get_post_meta($profile_id, $meta_key, true);
-
-            // Return value using 'config_cpu' format, use saved value or default
-            $config['config_' . $id] = ($saved_value !== '' && $saved_value !== null) ? absint($saved_value) : ($info['default_value'] ?? 0);
-        }
-
-        update_post_meta($post_id, self::META_CONFIG, $config);
+	    update_post_meta($post_id, self::META_CONFIG, $config);
         update_post_meta($post_id, self::META_SELECTED_TESTS, $selected_tests);
 
         // --- Save Profile Data Used ---
         $profile_state_data = null;
-        if($profile_id_used && get_post_type($profile_id_used) === ProfileCPT::POST_TYPE) {
+
+        if ($profile_id_used && get_post_type($profile_id_used) === AdminBenchmark::POST_TYPE) {
              update_post_meta($post_id, self::META_PROFILE_ID_USED, $profile_id_used);
 
              // Fetch profile data to save its state at time of run
@@ -347,7 +348,7 @@ class AdminBenchmark {
                  'desired_plugins' => $profile_desired_plugins
              ];
 
-             update_post_meta($post_id, self::META_PROFILE_STATE_DURING_RUN, $profile_state_data); // Save data array
+			update_post_meta($post_id, self::META_PROFILE_STATE_DURING_RUN, $profile_state_data); // Save data array
         }
 
         // --- 4. Prepare for Benchmark ---
@@ -403,40 +404,38 @@ class AdminBenchmark {
         } // end try...finally
 
 
-        // --- 6. Finalize and Save Results ---
-        if ($benchmark_exception) {
-            $all_errors['benchmark_runtime'] = get_class($benchmark_exception) . ": " . $benchmark_exception->getMessage();
-        }
+		// --- 6. Finalize and Save Results ---
+		if ($benchmark_exception) {
+	        $all_errors['benchmark_runtime'] = get_class($benchmark_exception) . ": " . $benchmark_exception->getMessage();
+		}
 
-        if (!empty($all_errors)) { 
-            $results['errors'] = $all_errors; 
-        }
+		if (!empty($all_errors)) {
+		    $results['errors'] = $all_errors;
+		}
 
-        update_post_meta( $post_id, self::META_RESULTS, $results );
-        // save_post hook saves final actual state
+		update_post_meta( $post_id, self::META_RESULTS, $results );
+		// save_post hook saves final actual state
 
-        // The save_post hook will save the final actual state after restoration.
+		// --- 7. Send Response ---
+		$final_message = __( 'Benchmark completed!', 'wpbench' );
 
-        // --- 7. Send Response ---
-        $final_message = __( 'Benchmark completed!', 'wpbench' );
+		if (!empty($all_errors)) {
+		    $final_message .= ' ' . __( 'However, errors occurred. Check results for details.', 'wpbench');
+		}
 
-        if (!empty($all_errors)) { 
-            $final_message .= ' ' . __( 'However, errors occurred. Check results for details.', 'wpbench');
-        }
-
-        wp_send_json_success( [ 'message' => $final_message, 'post_id' => $post_id, 'results' => $results, 'view_url' => get_edit_post_link( $post_id, 'raw' ) ] );
+		wp_send_json_success( [ 'message' => $final_message, 'post_id' => $post_id, 'results' => $results, 'view_url' => get_edit_post_link( $post_id, 'raw' ) ] );
     }
 
     /**
      * Add the meta box to the Benchmark Result CPT edit screen.
      */
     public function add_results_meta_box(WP_Post $post) {
-         add_meta_box(
-            'wpbench_results_metabox',
-            __( 'Benchmark Results & States', 'wpbench' ), // Updated title
-            [ $this, 'render_results_meta_box_content' ],
-            self::POST_TYPE, 'normal', 'high'
-        );
+	add_meta_box(
+		'wpbench_results_metabox',
+		__( 'Benchmark Results & States', 'wpbench' ), // Updated title
+		[ $this, 'render_results_meta_box_content' ],
+		self::POST_TYPE, 'normal', 'high'
+		);
     }
 
     /**

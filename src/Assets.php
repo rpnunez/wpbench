@@ -20,8 +20,12 @@ class Assets {
     public function enqueue_admin_scripts( $hook ) {
         $screen = get_current_screen();
         $is_wpbench_run_page = ($hook === 'toplevel_page_wpbench_main_menu');
+        $is_wpbench_result_list = ($hook === 'edit.php' && isset($screen->post_type) && $screen->post_type === AdminBenchmark::POST_TYPE);
         $is_wpbench_result_edit = ($hook === 'post.php' && isset($screen->post_type) && $screen->post_type === AdminBenchmark::POST_TYPE);
         $is_wpbench_profile_edit = ( ($hook === 'post.php' || $hook === 'post-new.php') && isset($screen->post_type) && $screen->post_type === BenchmarkProfileAdmin::POST_TYPE);
+
+        // Check for our custom compare page using the constant slug
+        $is_wpbench_compare_page = ($hook === 'wpbench_page_' . BenchmarkCompare::PAGE_SLUG || (isset($_GET['page']) && $_GET['page'] === BenchmarkCompare::PAGE_SLUG));
 
         // --- Script for Run Page & Profile Edit Page ---
         // This script now handles the profile loader on the run page.
@@ -51,7 +55,6 @@ class Assets {
 
         // Scripts for the Benchmark Result CPT edit screen (charts)
         if ( $is_wpbench_result_edit ) {
-            // ... (keep chart-js enqueue) ...
             wp_enqueue_script(
                 'wpbench-results-js',
                 WPBENCH_URL . 'js/admin-results.js',
@@ -59,6 +62,14 @@ class Assets {
                 WPBENCH_VERSION,
                 true
             );
+
+            // Enqueue JS for compare button enable/disable logic
+            wp_enqueue_script('wpbench-compare-button-js', WPBENCH_URL . 'js/admin-compare-button.js', ['jquery'], WPBENCH_VERSION, true);
+
+            // Enqueue CSS for compare button tooltip and maybe general list table tweaks
+            wp_enqueue_style('wpbench-compare-css', WPBENCH_URL . 'css/admin-compare.css', [], WPBENCH_VERSION);
+            // Localize data needed by admin-compare-button.js (done via wp_add_inline_script or localize if preferred)
+            // Note: The current implementation uses inline script via admin_footer hook.
 
             // Pass result data from PHP to our results JS script
             global $post;
@@ -89,6 +100,14 @@ class Assets {
                     'results' => [], 'config' => [], 'selected_tests' => [], 'text' => []
                 ]);
             }
-       }
+        }
+
+        // --- Assets for Compare Page ---
+        if ($is_wpbench_compare_page) {
+            // Enqueue compare page specific CSS
+            wp_enqueue_style('wpbench-compare-css', WPBENCH_URL . 'css/admin-compare.css', [], WPBENCH_VERSION);
+            // WordPress Diff styles should be loaded automatically when needed by wp_text_diff,
+            // but enqueue explicitly if needed: wp_enqueue_style('wp-diff');
+        }
     }
 }

@@ -236,7 +236,7 @@ class BenchmarkProfileAdmin {
         }
 
         $profile_id = isset($_POST['profile_id']) ? absint($_POST['profile_id']) : 0;
-        if ($profile_id <= 0 || get_post_type($profile_id) !== BenchmarkProfileAdminh::POST_TYPE) {
+        if ($profile_id <= 0 || get_post_type($profile_id) !== BenchmarkProfileAdmin::POST_TYPE) {
             wp_send_json_error('Invalid profile ID.', 400);
         }
 
@@ -256,6 +256,7 @@ class BenchmarkProfileAdmin {
         foreach ($available_tests as $id => $info) {
             $meta_key = self::META_CONFIG_PREFIX . $id;
             $saved_value = get_post_meta($profile_id, $meta_key, true);
+
             // Return value using 'config_cpu' format, use saved value or default
             $config['config_' . $id] = ($saved_value !== '' && $saved_value !== null) ? absint($saved_value) : ($info['default_value'] ?? 0);
         }

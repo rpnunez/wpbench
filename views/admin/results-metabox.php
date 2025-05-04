@@ -98,7 +98,6 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
      <p><?php echo esc_html__( 'Configuration data or test definitions missing.', 'wpbench' ); ?></p>
 <?php endif; ?>
 
-
 <h3 style="margin-top: 20px;"><?php echo esc_html__( 'Benchmark Results', 'wpbench' ); ?></h3>
 <?php if (!empty($results)): ?>
     <table class="form-table widefat striped">
@@ -107,6 +106,18 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
                 <th scope="row"><?php echo esc_html__('Total Benchmark Time:', 'wpbench'); ?></th>
                 <td><strong><?php echo esc_html( $results['total_time'] ?? 'N/A' ); ?> <?php esc_html_e( 'seconds', 'wpbench' ); ?></strong></td>
             </tr>
+            <tr>
+                <th scope="row" style="width: 30%;"><?php echo esc_html__('Overall Score', 'wpbench'); ?></th>
+                <td>
+                    <?php if ($score !== '' && $score !== null): ?>
+                        <strong style="font-size: 1.2em;"><?php echo esc_html($score); ?></strong> / 100
+                        <p class="description"><?php esc_html_e('Higher is better. Based on weighted performance against internal targets.', 'wpbench'); ?></p>
+                    <?php else: ?>
+                        <em><?php echo esc_html__('N/A (Could not be calculated due to errors or missing data)', 'wpbench'); ?></em>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <tr></tr>
             <?php foreach ($all_possible_tests as $id => $info): ?>
                 <tr>
                     <th scope="row"><?php echo esc_html($info['name'] ?? $id); ?>:</th>

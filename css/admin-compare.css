@@ -1,0 +1,161 @@
+/* WPBench Admin Compare Styles */
+
+/* --- Tooltip for Compare Button --- */
+.wpbench-compare-tooltip {
+    position: relative;
+    cursor: help;
+    vertical-align: middle;
+    margin-left: 5px;
+}
+.wpbench-compare-tooltip .wpbench-tooltip-text {
+    visibility: hidden;
+    width: 160px;
+    background-color: #333; /* Darker background */
+    color: #fff;
+    text-align: center;
+    border-radius: 4px; /* Slightly less rounded */
+    padding: 5px 8px;
+    font-size: 11px;
+    line-height: 1.3;
+    position: absolute;
+    z-index: 10; /* Ensure it's above other elements */
+    bottom: 130%; /* Position above the icon */
+    left: 50%;
+    margin-left: -80px; /* Center the tooltip */
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    white-space: normal;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.wpbench-compare-tooltip .wpbench-tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+.wpbench-compare-tooltip:hover .wpbench-tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* --- Compare Page Layout --- */
+.wpbench-compare-page .compare-container {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1em;
+    border: 1px solid #ccd0d4;
+    background-color: #fff;
+}
+.wpbench-compare-page .compare-row {
+    display: table-row;
+    border-bottom: 1px solid #eee;
+}
+.wpbench-compare-page .compare-row:last-child {
+    border-bottom: none;
+}
+.wpbench-compare-page .compare-cell {
+    display: table-cell;
+    padding: 10px 12px; /* Slightly more padding */
+    vertical-align: top;
+    border-right: 1px solid #eee;
+}
+.wpbench-compare-page .compare-cell:last-child {
+    border-right: none;
+}
+
+/* Labels and Headers */
+.wpbench-compare-page .compare-label {
+    width: 22%; /* Adjusted width */
+    font-weight: bold;
+    background-color: #f8f9fa; /* Lighter background */
+    text-align: right;
+    padding-right: 15px;
+}
+.wpbench-compare-page .compare-header .compare-cell {
+    background-color: #f0f0f1;
+    text-align: center;
+    font-weight: bold;
+    border-bottom: 1px solid #ccd0d4;
+}
+.wpbench-compare-page .compare-header .compare-label {
+    text-align: left;
+    background-color: #e9eaec;
+}
+.wpbench-compare-page .compare-cell.benchmark-header small {
+    font-weight: normal;
+    color: #555;
+    display: block; /* Ensure date is on new line */
+    margin-top: 3px;
+}
+.wpbench-compare-page .section-header .compare-cell {
+    background-color: #f0f0f1;
+    border-bottom: 1px solid #ccd0d4;
+    border-top: 1px solid #ccd0d4;
+}
+.wpbench-compare-page .section-header h3 {
+    margin: 0;
+    font-size: 1.1em;
+    padding: 4px 0;
+}
+.wpbench-compare-page .section-header .compare-label {
+    background-color: #e9eaec;
+}
+
+/* Column widths (adjust as needed) */
+.wpbench-compare-page .compare-container.compare-col-2 .compare-cell { width: 39%; } /* (100 - 22) / 2 */
+.wpbench-compare-page .compare-container.compare-col-2 .compare-label { width: 22%; }
+.wpbench-compare-page .compare-container.compare-col-3 .compare-cell { width: 26%; } /* (100 - 22) / 3 */
+.wpbench-compare-page .compare-container.compare-col-3 .compare-label { width: 22%; }
+/* Add more classes for compare-col-4 etc. if needed */
+
+/* Winner Highlighting & Icons */
+.wpbench-compare-page .compare-cell.winner {
+    background-color: #e7f7e7 !important; /* Use important to override other backgrounds */
+    font-weight: bold;
+}
+.wpbench-compare-page .score-row .compare-cell.winner strong {
+    color: #006400; /* Dark green */
+}
+.wpbench-compare-page .compare-cell .dashicons {
+    font-size: 16px;
+    vertical-align: text-bottom; /* Align better with text */
+    margin-left: 4px;
+}
+.wpbench-compare-page .compare-cell .dashicons-awards { color: #d54e21; }
+.wpbench-compare-page .compare-cell .dashicons-clock,
+.wpbench-compare-page .compare-cell .dashicons-arrow-down-alt2 { color: #008a20; } /* Slightly different green */
+.wpbench-compare-page .compare-cell .dashicons-arrow-up-alt2 { color: #d63638; } /* Red for higher=better */
+.wpbench-compare-page .compare-cell .dashicons-warning.error-indicator { color: #d63638; cursor: help; }
+
+
+/* Plugin Diff Styles */
+.wpbench-compare-page .plugin-diff-content {
+    font-family: monospace, monospace; /* Fallback */
+    white-space: pre-wrap;
+    background: #fdfdfd; /* Slight off-white */
+    font-size: 12px;
+    line-height: 1.4;
+    border-left: 3px solid #f0f0f1; /* Add a subtle left border */
+}
+/* Styles from wp_text_diff output */
+.wpbench-compare-page .diff th { font-weight: bold; padding: 4px 8px; background: #f9f9f9; }
+.wpbench-compare-page .diff td { padding: 2px 4px; vertical-align: top; }
+.wpbench-compare-page .diff span { display: inline-block; } /* Helps prevent odd wrapping */
+.wpbench-compare-page .diff del { background: #ffe9e9; text-decoration: none; } /* Red background for deleted */
+.wpbench-compare-page .diff ins { background: #e9ffe9; text-decoration: none; } /* Green background for added */
+.wpbench-compare-page .diff .diff-context { color: #777; }
+.wpbench-compare-page .diff .diff-deletedline,
+.wpbench-compare-page .diff .diff-addedline {
+    /* display: block; */ /* Make sure lines render properly */
+}
+.wpbench-compare-page .diff .diff-deletedline del { /* Style text inside deletion */ }
+.wpbench-compare-page .diff .diff-addedline ins { /* Style text inside addition */ }
+
+/* General */
+.wpbench-compare-page .compare-label small { font-weight: normal; color: #666; display: block; margin-top: 3px; }
+.wpbench-compare-page em { color: #888; font-style: italic;}

@@ -158,8 +158,10 @@ jQuery(document).ready(function($) {
 
                     // Display results only for keys present in the response (which correspond to run tests)
                     // We rely on the PHP handler only returning results for run tests.
-                    if(results.cpu) resultsHtml += '<li>CPU Time: ' + (results.cpu.time !== undefined ? results.cpu.time : 'N/A') + ' s' + (results.cpu.error ? ' <span style="color:red;" title="'+results.cpu.error+'">(!)</span>' : '') + '</li>';
-
+                    if(results.cpu) {
+                        resultsHtml += '<li>CPU Time: ' + (results.cpu.time !== undefined ? results.cpu.time : 'N/A') + ' s' + (results.cpu.error ? ' <span style="color:red;" title="'+results.cpu.error+'">(!)</span>' : '') + '</li>';
+                    }
+                    
                     if(results.memory) resultsHtml += '<li>Memory Peak: ' + (results.memory.peak_usage_mb !== undefined ? results.memory.peak_usage_mb : 'N/A') + ' MB' + (results.memory.error ? ' <span style="color:red;" title="'+results.memory.error+'">(!)</span>' : '') + '</li>';
 
                     if(results.file_io) resultsHtml += '<li>File I/O Time: ' + (results.file_io.time !== undefined ? results.file_io.time : 'N/A') + ' s' + (results.file_io.error ? ' <span style="color:red;" title="'+results.file_io.error+'">(!)</span>' : '') + '</li>';
