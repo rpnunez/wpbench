@@ -1,7 +1,43 @@
 <?php
+
+/**
+ * Plugin Name: WPBench
+ * Plugin URI:  https://example.com/wpbench
+ * Description: A WordPress plugin for benchmarking custom functionality and performance.
+ * Version:     1.0.0
+ * Author:      Your Name
+ * Author URI:  https://example.com
+ * License:     GPL-2.0-or-later
+ * Text Domain: wpbench
+ *
+ * --------------------------------------------------------------------
+ *
+ * File:        TestRegistry.php
+ * Description: Handles discovery and instantiation of benchmark test classes.
+ * Namespace:   WPBench
+ * Classes:     WPBench\TestRegistry
+ * Dependencies: WPBench\BenchmarkTest\BaseBenchmarkTest
+ *
+ * Functionality:
+ * - Discovers available benchmark test classes.
+ * - Caches and retrieves information about test classes for future use.
+ * - Uses Reflection to ensure test classes implement the required interface.
+ * - Handles errors and exceptions gracefully.
+ *
+ * Notes:
+ * - This file is part of the WPBench plugin.
+ * - Do not access this file directly; exit if accessed outside of WordPress.
+ *
+ * --------------------------------------------------------------------
+ *
+ * @package    WPBench
+ * @author     Raymond Nunez <raypn93@gmail.com>
+ */
+
 namespace WPBench;
 
 use WPBench\BenchmarkTest\BaseBenchmarkTest;
+use WPBench\Logger;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -73,17 +109,17 @@ class TestRegistry {
 							if ( isset( $info['id'] ) && is_string($info['id']) && !empty($info['id']) ) {
 								$this->available_tests[ $info['id'] ] = $info; // Use the ID from get_info() as the key
 							} else {
-								trigger_error("WPBench: Test class $class_name get_info() did not return a valid string 'id'. Skipping.", E_USER_WARNING);
+								Logger::log("WPBench: Test class $class_name get_info() did not return a valid string 'id'. Skipping.", E_USER_WARNING);
 							}
 						} else {
-							trigger_error("WPBench: Test class $class_name does not implement get_info() method. Skipping.", E_USER_WARNING);
+							Logger::log("WPBench: Test class $class_name does not implement get_info() method. Skipping.", E_USER_WARNING);
 						}
 					}
 					// else: Class exists but doesn't implement interface or is abstract - ignore silently.
 				} catch (\ReflectionException $e) {
-					trigger_error("WPBench: Reflection error for class $class_name: " . $e->getMessage(), E_USER_WARNING);
+					Logger::log("WPBench: Reflection error for class $class_name: " . $e->getMessage(), E_USER_WARNING);
 				} catch (\Throwable $e) { // Catch potential errors during instantiation or get_info() call (Throwable for PHP 7+)
-					trigger_error("WPBench: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
+					Logger::log("WPBench: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
 				}
 			} else {
 				// This error now specifically means the autoloader found the file but couldn't load the expected class.
@@ -95,6 +131,8 @@ class TestRegistry {
 
 		// Ensure a consistent order (optional, based on ID)
 		ksort($this->available_tests);
+
+		Logger::log("Available tests: " . print_r($this->available_tests, true));
 
 		return $this->available_tests;
 	}
@@ -125,7 +163,7 @@ class TestRegistry {
 
         $info = $this->get_test_info($testId);
         if (!$info) {
-            return null; // Test ID not found
+			return null; // Test ID not found
         }
 
         // Construct class name from ID (assuming standard conversion)
@@ -133,21 +171,22 @@ class TestRegistry {
         $class_basename = implode('', array_map('ucfirst', $class_parts)); // db_read -> DBRead
         $full_class_name = WPBENCH_BASE_NAMESPACE . 'BenchmarkTest\\' . $class_basename;
 
-        if ( class_exists( $full_class_name ) ) {
-             try {
-                 $instance = new $full_class_name();
-                 if ($instance instanceof BaseBenchmarkTest) {
-                    $this->instances[$testId] = $instance;
-                    return $instance;
-                 } else {
-                      trigger_error("WPBench: Class $full_class_name does not implement BaseBenchmarkTest.", E_USER_WARNING);
-                 }
-             } catch (\Throwable $e) {
-                  trigger_error("WPBench: Failed to instantiate test class $full_class_name: " . $e->getMessage(), E_USER_WARNING);
-             }
-        } else {
-             trigger_error("WPBench: Test class $full_class_name not found for ID $testId.", E_USER_WARNING);
-        }
+		if ( class_exists( $full_class_name ) ) {
+			try {
+				$instance = new $full_class_name();
+
+				if ($instance instanceof BaseBenchmarkTest) {
+					$this->instances[$testId] = $instance;
+					return $instance;
+				} else {
+					trigger_error("WPBench: Class $full_class_name does not implement BaseBenchmarkTest.", E_USER_WARNING);
+				}
+			} catch (\Throwable $e) {
+				trigger_error("WPBench: Failed to instantiate test class $full_class_name: " . $e->getMessage(), E_USER_WARNING);
+			}
+		} else {
+			trigger_error("WPBench: Test class $full_class_name not found for ID $testId.", E_USER_WARNING);
+		}
 
         return null;
     }

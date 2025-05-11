@@ -109,12 +109,33 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
             <tr>
                 <th scope="row" style="width: 30%;"><?php echo esc_html__('Overall Score', 'wpbench'); ?></th>
                 <td>
-                    <?php if ($score !== '' && $score !== null): ?>
-                        <strong style="font-size: 1.2em;"><?php echo esc_html($score); ?></strong> / 100
-                        <p class="description"><?php esc_html_e('Higher is better. Based on weighted performance against internal targets.', 'wpbench'); ?></p>
-                    <?php else: ?>
-                        <em><?php echo esc_html__('N/A (Could not be calculated due to errors or missing data)', 'wpbench'); ?></em>
-                    <?php endif; ?>
+<!--                    --><?php //if ($score !== '' && $score !== null): ?>
+<!--                        <strong style="font-size: 1.2em;">--><?php //echo esc_html($score); ?><!--</strong> / 100-->
+<!--                        <p class="description">--><?php //esc_html_e('Higher is better. Based on weighted performance against internal targets.', 'wpbench'); ?><!--</p>-->
+<!--                    --><?php //else: ?>
+<!--                        <em>--><?php //echo esc_html__('N/A (Could not be calculated due to errors or missing data)', 'wpbench'); ?><!--</em>-->
+<!--                    --><?php //endif; ?>
+
+                    <div class="wpbench-score-chart-container" style="width: 150px; height: 150px; margin: 15px auto 25px; position: relative;">
+                        <?php if ($score !== null && $score !== ''): ?>
+                            <canvas id="wpbenchScoreChart"></canvas>
+                            <div class="wpbench-score-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none;">
+                                <?php // This text is overlaid, JS will update it more accurately if needed ?>
+                                <span style="font-size: 2em; font-weight: bold; display: block; line-height: 1;">
+                                    <?php echo esc_html($score); ?>
+                                    <span style="font-size: 0.5em; font-weight: normal;">%</span>
+                                </span>
+                                <span style="font-size: 0.8em; color: #666;">
+                                    <?php esc_html_e('Score', 'wpbench'); ?>
+                                </span>
+                            </div>
+                        <?php else: ?>
+                            <div style="text-align: center; padding-top: 40px; border: 1px dashed #ccc; height: 100%; box-sizing: border-box;">
+                                <em><?php echo esc_html__('Score N/A', 'wpbench'); ?></em>
+                                <p class="description" style="font-size: 11px;"><?php esc_html_e('(Calculation failed or data missing)', 'wpbench'); ?></p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
                 </td>
             </tr>
             <tr></tr>
@@ -122,37 +143,43 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
                 <tr>
                     <th scope="row"><?php echo esc_html($info['name'] ?? $id); ?>:</th>
                     <?php if (in_array($id, $selected_tests) && isset($results[$id])): ?>
-                        <?php
-                         // Test was selected and has results data
-                         $result_data = $results[$id];
-                         $display_value = '';
-                         $error_msg = $result_data['error'] ?? null;
-                         $time_val = $result_data['time'] ?? 'N/A';
+                    <?php
+                        // Test was selected and has results data
+                        $result_data = $results[$id];
+                        $display_value = '';
+                        $error_msg = $result_data['error'] ?? null;
+                        $time_val = $result_data['time'] ?? 'N/A';
 
-                         // Format display based on test type
-                         switch ($id) {
-                             case 'cpu':
-                                 $display_value = esc_html($time_val) . ' ' . esc_html__( 's', 'wpbench' );
-                                 break;
-                             case 'memory':
-                                 $peak_mb = $result_data['peak_usage_mb'] ?? 'N/A';
-                                 $display_value = esc_html($peak_mb) . ' MB (' . esc_html($time_val) . ' s)';
-                                 break;
-                             case 'file_io':
-                                 $ops = number_format_i18n($result_data['operations'] ?? 0);
-                                 $display_value = esc_html($time_val) . ' s (' . esc_html($ops) . ' ops)';
-                                 break;
-                             case 'db_read':
-                                  $queries = number_format_i18n($result_data['queries_executed'] ?? 0);
-                                  $display_value = esc_html($time_val) . ' s (' . esc_html($queries) . ' queries)';
-                                  break;
-                             case 'db_write':
-                                  $ops = number_format_i18n($result_data['operations'] ?? 0);
-                                  $display_value = esc_html($time_val) . ' s (' . esc_html($ops) . ' ops)';
-                                  break;
-                             default:
-                                 $display_value = esc_html($time_val) . ' s';
-                         }
+                        // Format display based on test type
+                        switch ($id) {
+                            case 'cpu':
+                                $display_value = esc_html($time_val) . ' ' . esc_html__( 's', 'wpbench' );
+                            break;
+
+                            case 'memory':
+                                $peak_mb = $result_data['peak_usage_mb'] ?? 'N/A';
+                                $display_value = esc_html($peak_mb) . ' MB (' . esc_html($time_val) . ' s)';
+                            break;
+
+                            case 'file_io':
+                                $ops = number_format_i18n($result_data['operations'] ?? 0);
+                                $display_value = esc_html($time_val) . ' s (' . esc_html($ops) . ' ops)';
+                            break;
+
+                            case 'db_read':
+                                $queries = number_format_i18n($result_data['queries_executed'] ?? 0);
+                                $display_value = esc_html($time_val) . ' s (' . esc_html($queries) . ' queries)';
+                            break;
+
+                            case 'db_write':
+                                /** @noinspection PhpDuplicateSwitchCaseBodyInspection */
+                                $ops            = number_format_i18n( $result_data['operations'] ?? 0);
+                                $display_value = esc_html($time_val) . ' s (' . esc_html($ops) . ' ops)';
+                            break;
+
+                            default:
+                                $display_value = esc_html($time_val) . ' s';
+                        }
                         ?>
                         <td><?php echo $display_value; ?><?php if($error_msg) echo ' <span style="color:red;" title="'.esc_attr($error_msg).'">(!)</span>'; ?></td>
                     <?php elseif (in_array($id, $selected_tests)): ?>

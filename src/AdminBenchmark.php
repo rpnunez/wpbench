@@ -1,9 +1,13 @@
 <?php
 namespace WPBench;
 
+use WPBench\BenchmarkScore;
 use WPBench\BenchmarkTest\BaseBenchmarkTest;
+use WPBench\Logger;
 use WP_Error;
-use WP_Post; // Type hint for post objects
+use WP_Post;
+
+// Type hint for post objects
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -15,25 +19,35 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class AdminBenchmark {
 
-    const POST_TYPE = 'benchmark_result';
+    const string POST_TYPE = 'benchmark_result';
 
     // Meta Keys specific to Benchmark Results
-    const META_CONFIG = '_wpbench_config';
-    const META_RESULTS = '_wpbench_results';
-    const META_SELECTED_TESTS = '_wpbench_selected_tests';
-    const META_PROFILE_ID_USED = '_wpbench_profile_id_used';
-    const META_PROFILE_STATE_DURING_RUN = '_wpbench_profile_state_during_benchmark'; // Stores profile data array
+    const string META_CONFIG = '_wpbench_config';
+    const string META_RESULTS = '_wpbench_results';
+    const string META_SELECTED_TESTS = '_wpbench_selected_tests';
+    const string META_PROFILE_ID_USED = '_wpbench_profile_id_used';
+    const string META_PROFILE_STATE_DURING_RUN = '_wpbench_profile_state_during_benchmark'; // Stores profile data array
+	const string META_SCORE = '_wpbench_score';
 
-    private $pluginState;
-    private $pluginStateView;
-    private $pluginManager;
-    private $testRegistry;
+	private PluginState $pluginState;
+    private PluginStateView $pluginStateView;
+    private PluginManager $pluginManager;
+    private TestRegistry $testRegistry;
+	private BenchmarkScore $benchmarkScore;
 
-    public function __construct(PluginState $pluginState = null, PluginStateView $pluginStateView = null, TestRegistry $testRegistry = null, PluginManager $pluginManager = null) {
-        $this->pluginState = $pluginState ?? new PluginState();
-        $this->testRegistry = $testRegistry ?? new TestRegistry();
-        $this->pluginManager = $pluginManager ?? new PluginManager();
-        $this->pluginStateView = $pluginStateView ?? new PluginStateView($this->pluginState, $this->testRegistry);
+    public function __construct(
+	    PluginManager $pluginManager,
+		PluginState $pluginState,
+		PluginStateView $pluginStateView,
+		TestRegistry $testRegistry,
+	    BenchmarkScore $benchmarkScore
+	    )
+    {
+        $this->pluginState = $pluginState;
+        $this->testRegistry = $testRegistry;
+        $this->pluginManager = $pluginManager;
+        $this->pluginStateView = $pluginStateView;// ?? new PluginStateView($this->pluginState, $this->testRegistry);
+	    $this->benchmarkScore = $benchmarkScore;
     }
 
     /**
@@ -159,7 +173,17 @@ class AdminBenchmark {
 			'sanitize_callback' => [$this, 'sanitize_array_meta'],
 		]);
 
-		// Register meta keys managed primarily by PluginState (for REST API visibility etc.)
+	    // Meta field for the calculated benchmark score
+	    register_post_meta( self::POST_TYPE, self::META_SCORE, [
+		    'type'              => 'integer',
+		    'description'       => __('Overall calculated benchmark score (0-100, higher is better).', 'wpbench'),
+		    'single'            => true,
+		    'show_in_rest'      => true,
+		    'sanitize_callback' => 'absint',
+		    // Add default value if needed via 'default' key, though calculated dynamically
+	    ]);
+
+	    // Register meta keys managed primarily by PluginState (for REST API visibility etc.)
 		register_post_meta( self::POST_TYPE, PluginState::DESIRED_PLUGINS_META_KEY, [
 			'type'              => 'array',
 			'description'       => __('Array of plugin file paths desired to be active for the run.', 'wpbench'),
@@ -199,10 +223,14 @@ class AdminBenchmark {
 
      /** Sanitizer for the active plugin list structure */
     public function sanitize_plugin_list_meta($meta_value) {
-        if (!is_array($meta_value)) return [];
+        if (!is_array($meta_value)) {
+			return [];
+        }
+
         $sanitized = [];
-        foreach($meta_value as $item) {
-            if(is_array($item)) {
+
+        foreach ($meta_value as $item) {
+            if (is_array($item)) {
                 $sanitized[] = [
                     'name' => isset($item['name']) ? sanitize_text_field($item['name']) : '',
                     'version' => isset($item['version']) ? sanitize_text_field($item['version']) : '',
@@ -210,6 +238,7 @@ class AdminBenchmark {
                 ];
             }
         }
+
         return $sanitized;
     }
 
@@ -219,26 +248,43 @@ class AdminBenchmark {
     public function add_admin_menu() {
         // Add main menu page (callback renders 'Run New Benchmark')
         add_menu_page(
-            __( 'WPBench', 'wpbench' ), __( 'WPBench', 'wpbench' ), 'manage_options',
-            'wpbench_main_menu', [ $this, 'render_run_benchmark_page' ], 'dashicons-dashboard', 75
+            __( 'WPBench', 'wpbench' ),
+            __( 'WPBench', 'wpbench' ),
+            'manage_options',
+            'wpbench_main_menu',
+            [ $this, 'render_run_benchmark_page' ],
+            'dashicons-dashboard',
+            75
         );
 
         // Submenu for running a new benchmark (points to the main page callback)
         add_submenu_page(
-            'wpbench_main_menu', __( 'Run New Benchmark', 'wpbench' ), __( 'Run New Benchmark', 'wpbench' ), 'manage_options',
-            'wpbench_main_menu', [ $this, 'render_run_benchmark_page' ]
+            'wpbench_main_menu',
+            __( 'Run New Benchmark', 'wpbench' ),
+            __( 'Run New Benchmark', 'wpbench' ),
+            'manage_options',
+            'wpbench_main_menu',
+            [ $this, 'render_run_benchmark_page' ]
         );
 
         // Submenu linking to the Benchmark Profiles CPT list table
          add_submenu_page(
-            'wpbench_main_menu', __( 'Benchmark Profiles', 'wpbench' ), __( 'Profiles', 'wpbench' ), 'manage_options',
-            'edit.php?post_type=' . BenchmarkProfileAdmin::POST_TYPE, null
+            'wpbench_main_menu',
+            __( 'Benchmark Profiles', 'wpbench' ),
+            __( 'Profiles', 'wpbench' ),
+            'manage_options',
+            'edit.php?post_type=' . BenchmarkProfileAdmin::POST_TYPE,
+            null
         );
 
         // Submenu linking to the Benchmark Results CPT list table
         add_submenu_page(
-            'wpbench_main_menu', __( 'All Benchmarks', 'wpbench' ), __( 'All Benchmarks', 'wpbench' ), 'manage_options',
-            'edit.php?post_type=' . AdminBenchmark::POST_TYPE, null
+            'wpbench_main_menu',
+            __( 'All Benchmarks', 'wpbench' ),
+            __( 'All Benchmarks', 'wpbench' ),
+            'manage_options',
+            'edit.php?post_type=' . AdminBenchmark::POST_TYPE,
+            null
         );
     }
 
@@ -250,9 +296,10 @@ class AdminBenchmark {
         // Prepare variables needed by the view
         $available_tests = $this->testRegistry->get_available_tests();
         $pluginStateView = $this->pluginStateView; // Pass instance to view
+
         $profiles = get_posts([
-            'post_type' => ProfileCPT::POST_TYPE, 'post_status' => 'publish',
-            'numberposts' => -1, 'orderby' => 'title', 'order' => 'ASC',
+	        'post_type'   => self::POST_TYPE, 'post_status' => 'publish',
+	        'numberposts' => -1, 'orderby' => 'title', 'order' => 'ASC',
         ]);
 
         // Include the view file
@@ -277,20 +324,24 @@ class AdminBenchmark {
 		$profile_id_used     = isset( $_POST['profile_id_used'] ) ? absint( $_POST['profile_id_used'] ) : null;
 
 		if ( empty( $selected_tests_raw ) ) {
-		    wp_send_json_error( [ 'message' => __( 'No benchmark tests were selected to run.', 'wpbench' ) ], 400 );
+		    wp_send_json_error( [ 'message' => __( 'No benchmark tests were selected to run.', 'wpbench' ) ],400 );
 		}
 
 	    // --- 2. Create Post Early ---
 	    $benchmark_name = isset( $_POST['benchmark_name'] ) ? sanitize_text_field( wp_unslash( $_POST['benchmark_name'] ) ) : 'Unnamed Benchmark';
-	    $post_data      = [ 'post_title'  => $benchmark_name,
-	                        'post_type'   => self::POST_TYPE,
-	                        'post_status' => 'publish',
-	                        'post_author' => get_current_user_id()
+	    $post_data      = [
+			'post_title'  => $benchmark_name,
+            'post_type'   => self::POST_TYPE,
+            'post_status' => 'publish',
+            'post_author' => get_current_user_id()
 	    ];
 	    $post_id        = wp_insert_post( $post_data, true );
 
 		if ( is_wp_error( $post_id ) || $post_id === 0 ) {
-		    wp_send_json_error( [ 'message' => __( 'Error creating benchmark result post:', 'wpbench' ) . ( is_wp_error( $post_id ) ? ' ' . $post_id->get_error_message() : '' ) ], 500 );
+		    wp_send_json_error( [
+				'message' => __( 'Error creating benchmark result post:', 'wpbench' ) . ( is_wp_error( $post_id ) ? ' ' . $post_id->get_error_message() : '' ) ],
+		    500
+		    );
 		}
 
 	    // --- 3. Save Initial States, Config, and Profile Data ---
@@ -352,41 +403,69 @@ class AdminBenchmark {
         }
 
         // --- 4. Prepare for Benchmark ---
-        $results = []; $start_time = null; $all_errors = [];
-        $state_change_result = null; $benchmark_exception = null; $restore_result = null;
+        $results = [];
+		$start_time = null;
+		$all_errors = [];
+        $state_change_result = null;
+		$benchmark_exception = null;
+		$restore_result = null;
         $changes = $this->pluginState->calculateStateChanges($preBenchmarkState, $desired_plugins);
         $needs_state_change = !empty($changes['to_activate']) || !empty($changes['to_deactivate']);
+	    $score = null; // Initialize score
 
         // --- 5. Execute Risky Operations & Benchmark ---
-        // !! WARNING: HIGH RISK SECTION !!
         try {
              if ($needs_state_change) {
-                 error_log("WPBench: Attempting plugin state change for benchmark $post_id...");
+                 Logger::log("Attempting plugin state change for benchmark $post_id...");
+
                  $state_change_result = $this->pluginManager->executeChange($changes['to_activate'], $changes['to_deactivate']);
-                 if (!empty($state_change_result['errors'])) { $all_errors['state_change'] = $state_change_result['errors']; /* ... log ... */ }
-                 if (!$state_change_result['success']) { throw new \Exception("Failed to set desired plugin state."); }
-                 error_log("WPBench: Plugin state change complete for $post_id.");
-             } else { error_log("WPBench: No state change needed for $post_id."); }
+
+                 if (!empty($state_change_result['errors'])) {
+	                 /* ... log ... */
+	                 $all_errors['state_change'] = $state_change_result['errors'];
+				 }
+
+                 if (!$state_change_result['success']) {
+					 throw new \Exception("Failed to set desired plugin state.");
+				 }
+
+                 Logger::log("Plugin state change complete for $post_id.");
+             } else {
+				 Logger::log("No state change needed for $post_id.");
+			 }
 
             // Run Benchmarks
             $start_time = microtime(true);
+
             foreach ($selected_tests as $test_id) {
                 $test_instance = $this->testRegistry->get_test_instance($test_id);
+
                 if ($test_instance instanceof BaseBenchmarkTest) {
                      $config_value = $config['config_' . $test_id] ?? $available_tests[$test_id]['default_value'];
                      $results[$test_id] = $test_instance->run($config_value);
-                } else { $results[$test_id] = ['error' => "Test instance for '$test_id' could not be created."]; }
+                } else {
+					$results[$test_id] = [
+						'error' => "Test instance for '$test_id' could not be created."
+					];
+				}
             }
-             $end_time = microtime(true); $results['total_time'] = round( $end_time - $start_time, 4 );
 
+			$end_time = microtime(true); $results['total_time'] = round( $end_time - $start_time, 4 );
+
+	        // --- Calculate Score ---
+	        // Calculate score only if state change was successful (or not needed) and benchmark loop completed
+	        $score = $this->benchmarkScore->calculate($results, $config, $selected_tests);
+	        // --- End Score Calculation ---
+
+	        Logger::log("Calculated BenchmarkScore of $score for post id $post_id...");
         } catch (\Exception $e) { 
-            $benchmark_exception = $e; error_log("WPBench Exception ($post_id): " . $e->getMessage()); 
+            $benchmark_exception = $e; Logger::log("WPBench Exception ($post_id): " . $e->getMessage());
         } catch (\Error $e) {
-            $benchmark_exception = $e; error_log("WPBench Error ($post_id): " . $e->getMessage());
+            $benchmark_exception = $e; Logger::log("WPBench Error ($post_id): " . $e->getMessage());
         } finally {
             // --- 5c. Restore Original Plugin State (using PluginManager) ---
             if ($needs_state_change) {
-                error_log("WPBench: Attempting state restoration for $post_id...");
+                Logger::log("Attempting state restoration for $post_id...");
 
                 $currentStateAfterTest = $this->pluginState->getCurrentState();
                 $restore_result = $this->pluginManager->restoreState($preBenchmarkState, $currentStateAfterTest);
@@ -394,15 +473,14 @@ class AdminBenchmark {
                 if (!empty($restore_result['errors'])) {
                     $all_errors['state_restore'] = $restore_result['errors'];
 
-                    error_log("WPBench: Restoration errors for $post_id: " . print_r($restore_result['errors'], true));
+                    Logger::log("Restoration errors for $post_id: " . print_r($restore_result['errors'], true));
                 }
 
-                error_log("WPBench: Restoration attempt complete for $post_id.");
+                Logger::log("Restoration attempt complete for $post_id.");
             } else { 
-                error_log("WPBench: Skipping restoration (no changes needed) for $post_id."); 
+                Logger::log("Skipping restoration (no changes needed) for $post_id.");
             }
         } // end try...finally
-
 
 		// --- 6. Finalize and Save Results ---
 		if ($benchmark_exception) {
@@ -413,8 +491,15 @@ class AdminBenchmark {
 		    $results['errors'] = $all_errors;
 		}
 
+	    // --- Save Score
+	    if ($score !== null) {
+		    update_post_meta( $post_id, self::META_SCORE, $score ); // Save the calculated score
+
+		    $results['score'] = $score; // Also add to results array for immediate AJAX response consistency
+	    }
+
+	    // --- Save Results Meta
 		update_post_meta( $post_id, self::META_RESULTS, $results );
-		// save_post hook saves final actual state
 
 		// --- 7. Send Response ---
 		$final_message = __( 'Benchmark completed!', 'wpbench' );
@@ -423,18 +508,23 @@ class AdminBenchmark {
 		    $final_message .= ' ' . __( 'However, errors occurred. Check results for details.', 'wpbench');
 		}
 
-		wp_send_json_success( [ 'message' => $final_message, 'post_id' => $post_id, 'results' => $results, 'view_url' => get_edit_post_link( $post_id, 'raw' ) ] );
+		wp_send_json_success( [
+			'message' => $final_message,
+			'post_id' => $post_id,
+			'results' => $results,
+			'view_url' => get_edit_post_link( $post_id, 'raw' )
+		] );
     }
 
     /**
      * Add the meta box to the Benchmark Result CPT edit screen.
      */
     public function add_results_meta_box(WP_Post $post) {
-	add_meta_box(
-		'wpbench_results_metabox',
-		__( 'Benchmark Results & States', 'wpbench' ), // Updated title
-		[ $this, 'render_results_meta_box_content' ],
-		self::POST_TYPE, 'normal', 'high'
+		add_meta_box(
+			'wpbench_results_metabox',
+			__( 'Benchmark Results & States', 'wpbench' ), // Updated title
+			[ $this, 'render_results_meta_box_content' ],
+			self::POST_TYPE, 'normal', 'high'
 		);
     }
 
@@ -446,6 +536,7 @@ class AdminBenchmark {
         // Prepare variables needed by the view
         $config = get_post_meta( $post->ID, self::META_CONFIG, true );
         $results = get_post_meta( $post->ID, self::META_RESULTS, true );
+	    $score = get_post_meta($post->ID, self::META_SCORE, true);
         $selected_tests = get_post_meta( $post->ID, self::META_SELECTED_TESTS, true );
         $active_plugins_final = get_post_meta( $post->ID, PluginState::ACTUAL_PLUGINS_META_KEY, true );
         $desired_plugins = $this->pluginState->getDesiredState($post->ID);
@@ -460,23 +551,70 @@ class AdminBenchmark {
         include WPBENCH_PATH . 'views/admin/results-metabox.php';
     }
 
-
     /** Add custom columns to the benchmark_result list table. */
     public function set_custom_edit_benchmark_result_columns( $columns ) { 
         $new_columns = [];
-         // Define order preference, including profile
-         $order_pref = ['cb', 'title', 'profile', 'total_time', 'cpu_time', 'memory_peak', 'author', 'date'];
+		// Define order preference, including profile
+		$order_pref = ['cb', 'title', 'profile', 'total_time', 'cpu_time', 'memory_peak', 'author', 'date'];
 
-         foreach ($order_pref as $key) {
-            if ($key === 'cb' && isset($columns['cb'])) { $new_columns['cb'] = $columns['cb']; }
-            elseif ($key === 'title' && isset($columns['title'])) { $new_columns['title'] = $columns['title']; }
-            elseif ($key === 'profile') { $new_columns['profile'] = __( 'Profile Used', 'wpbench' ); }
-            elseif ($key === 'total_time') { $new_columns['total_time'] = __( 'Total (s)', 'wpbench' ); }
-            elseif ($key === 'cpu_time') { $new_columns['cpu_time'] = __( 'CPU (s)', 'wpbench' ); }
-            elseif ($key === 'memory_peak') { $new_columns['memory_peak'] = __( 'Mem (MB)', 'wpbench' ); }
-            elseif ($key === 'author' && isset($columns['author'])) { $new_columns['author'] = $columns['author']; }
-            elseif ($key === 'date' && isset($columns['date'])) { $new_columns['date'] = $columns['date']; }
-         }
+		foreach ($order_pref as $key) {
+			// @TODO: Decide whether to use if/elseif statements, or switch case...
+
+			/*if ($key === 'cb' && isset($columns['cb'])) { $new_columns['cb'] = $columns['cb']; }
+			elseif ($key === 'title' && isset($columns['title'])) { $new_columns['title'] = $columns['title']; }
+			elseif ($key === 'profile') { $new_columns['profile'] = __( 'Profile Used', 'wpbench' ); }
+			elseif ($key === 'total_time') { $new_columns['total_time'] = __( 'Total (s)', 'wpbench' ); }
+			elseif ($key === 'cpu_time') { $new_columns['cpu_time'] = __( 'CPU (s)', 'wpbench' ); }
+			elseif ($key === 'memory_peak') { $new_columns['memory_peak'] = __( 'Mem (MB)', 'wpbench' ); }
+			elseif ($key === 'author' && isset($columns['author'])) { $new_columns['author'] = $columns['author']; }
+			elseif ($key === 'date' && isset($columns['date'])) { $new_columns['date'] = $columns['date']; }*/
+
+			switch ($key) {
+				case 'cb':
+					if (isset($columns['cb'])) {
+					 $new_columns['cb'] = $columns['cb'];
+					}
+				break;
+
+				case 'title':
+					if (isset($columns['title'])) {
+					 $new_columns['title'] = $columns['title'];
+					}
+				break;
+
+				case 'profile':
+					$new_columns['profile'] = __( 'Profile Used', 'wpbench' );
+				break;
+
+				case 'total_time':
+					$new_columns['total_time'] = __( 'Total (s)', 'wpbench' );
+				break;
+
+				case 'cpu_time':
+					$new_columns['cpu_time'] = __( 'CPU (s)', 'wpbench' );
+				break;
+
+				case 'memory_peak':
+					$new_columns['memory_peak'] = __( 'Mem (MB)', 'wpbench' );
+				break;
+
+				case 'author':
+					if (isset($columns['author'])) {
+						$new_columns['author'] = $columns['author'];
+					}
+				break;
+
+				case 'date':
+					if (isset($columns['date'])) {
+						$new_columns['date'] = $columns['date'];
+					}
+				break;
+
+				default:
+					// No action for unhandled cases
+				break;
+			}
+			}
 
          // Add any remaining original columns
          foreach ($columns as $key => $value) { 
@@ -493,9 +631,11 @@ class AdminBenchmark {
         switch ( $column ) {
             case 'profile':
                 $profile_id = get_post_meta($post_id, self::META_PROFILE_ID_USED, true);
+
                 if ($profile_id) {
                     $profile_link = get_edit_post_link(absint($profile_id));
                     $profile_title = get_the_title(absint($profile_id));
+
                     if ($profile_link && $profile_title) {
                         echo '<a href="'.esc_url($profile_link).'">'.esc_html($profile_title).'</a>';
                     } elseif ($profile_title) {
@@ -503,26 +643,43 @@ class AdminBenchmark {
                     } else {
                         echo '#' . esc_html($profile_id) . ' ' . esc_html__('(Profile Deleted?)','wpbench');
                     }
-                } else { echo '<em>' . esc_html__('None', 'wpbench') . '</em>'; }
-                break;
+                } else {
+					echo '<em>' . esc_html__('None', 'wpbench') . '</em>';
+				}
+            break;
 
             default:
                 // Handle other columns (time, cpu, mem)
                 $results = get_post_meta( $post_id, self::META_RESULTS, true );
-                if (empty($results) || !is_array($results)) return;
-                switch ( $column ) {
-                   case 'total_time': echo esc_html( $results['total_time'] ?? 'N/A' ); break;
-                   case 'cpu_time':
-                        echo esc_html( $results['cpu']['time'] ?? 'N/A' );
-                        if (!empty($results['cpu']['error'])) echo ' <span style="color:red;" title="'.esc_attr($results['cpu']['error']).'">(!)</span>';
-                        break;
-                   case 'memory_peak':
-                        echo esc_html( $results['memory']['peak_usage_mb'] ?? 'N/A' );
-                        if (!empty($results['memory']['error'])) echo ' <span style="color:red;" title="'.esc_attr($results['memory']['error']).'">(!)</span>';
-                        break;
+
+                if (empty($results) || !is_array($results)) {
+					return;
                 }
-                break;
+
+                switch ( $column ) {
+					case 'total_time':
+						echo esc_html( $results['total_time'] ?? 'N/A' );
+					break;
+
+					case 'cpu_time':
+						echo esc_html( $results['cpu']['time'] ?? 'N/A' );
+
+						if (!empty($results['cpu']['error'])) {
+							echo ' <span style="color:red;" title="'.esc_attr($results['cpu']['error']).'">(!)</span>';
+						}
+					break;
+
+					case 'memory_peak':
+						echo esc_html( $results['memory']['peak_usage_mb'] ?? 'N/A' );
+
+						if (!empty($results['memory']['error'])) {
+							echo ' <span style="color:red;" title="'.esc_attr($results['memory']['error']).'">(!)</span>';
+						}
+					break;
+                }
+
+            break;
         }
     }
 
-} // End Class AdminBenchmark
+}

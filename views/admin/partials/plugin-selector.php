@@ -22,6 +22,9 @@ if (empty($all_plugins)) {
      return;
 }
 
+// Get the base file path for WPBench plugin itself
+$wpbench_plugin_basename = plugin_basename(WPBENCH_PATH . 'wpbench.php');
+
 ?>
 <fieldset>
     <legend class="screen-reader-text"><span><?php esc_html_e('Select Plugins', 'wpbench'); ?></span></legend>
@@ -33,18 +36,26 @@ if (empty($all_plugins)) {
     });
 
     foreach ($all_plugins as $plugin_file => $plugin_data) {
-        $is_currently_site_active = in_array($plugin_file, $current_active_site);
-        $is_currently_network_active = in_array($plugin_file, $current_active_network);
-        $is_checked = in_array($plugin_file, $plugins_to_check); // Check based on passed variable
-        $is_disabled = $is_currently_network_active && !$can_manage_network; // Site admin cannot change network-active plugins
+	    $is_currently_site_active = in_array($plugin_file, $current_active_site);
+	    $is_currently_network_active = in_array($plugin_file, $current_active_network);
 
-        // Ensure disabled network plugins are always checked visually (their state cannot be changed by non-network admin)
-        if ($is_disabled) {
-            $is_checked = true;
-        }
+	    $is_this_plugin = ($plugin_file === $wpbench_plugin_basename);
 
-        $checkbox_id = 'plugin_' . esc_attr(sanitize_key($plugin_file));
-        ?>
+	    // Determine initial checked state: use provided selection, or fallback to current reality
+	    // WPBench itself should always be considered 'to check' if not explicitly deselected (which it can't be now)
+	    $is_checked_based_on_selection = in_array($plugin_file, $plugins_to_check);
+	    $is_checked = $is_this_plugin ? true : $is_checked_based_on_selection;
+
+	    $is_disabled_by_network = $is_currently_network_active && !$can_manage_network;
+	    $is_disabled = $is_disabled_by_network || $is_this_plugin; // Disable network-active (if not NA) OR if it's WPBench
+
+	    // Ensure disabled network plugins are always visually checked if they are network active
+	    if ($is_disabled_by_network) {
+		    $is_checked = true;
+	    }
+
+	    $checkbox_id = 'plugin_' . esc_attr(sanitize_key($plugin_file));
+	    ?>
         <div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px dotted #eee;">
             <label for="<?php echo $checkbox_id; ?>">
                 <input name="<?php echo esc_attr($input_name); ?>"

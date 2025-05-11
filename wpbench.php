@@ -44,6 +44,8 @@
  */
 
 // Exit if accessed directly
+use WPBench\Logger;
+
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
@@ -101,8 +103,8 @@ function wpbench_run_plugin() {
             esc_html_e( 'WPBench plugin critical error: Main plugin class failed to load. Check file structure and autoloader.', 'wpbench' );
             echo '</p></div>';
         });
-        
-        error_log('WPBench Error: Failed to load main plugin class ' . WPBENCH_BASE_NAMESPACE . 'Plugin');
+
+	    Logger::log('WPBench Error: Failed to load main plugin class ' . WPBENCH_BASE_NAMESPACE . 'Plugin', 'critical');
     }
 }
 
@@ -125,8 +127,9 @@ register_deactivation_hook( __FILE__, [ WPBENCH_BASE_NAMESPACE . 'Plugin', 'deac
 function wpbench_option( string $setting_key, $default = null ) {
 	// Ensure the Settings class is loaded (should be by autoloader)
 	if (!class_exists(WPBENCH_BASE_NAMESPACE . 'WPBenchSettings')) {
-		// Optionally log an error if class isn't available
-		error_log('WPBench Error: WPBenchSettings class not found in wpbench_option function.');
+		// Log an error if class isn't available
+		Logger::log('WPBench Error: WPBenchSettings class not found in wpbench_option function.', 'error');
+
 		return $default; // Return explicit default if class is missing
 	}
 

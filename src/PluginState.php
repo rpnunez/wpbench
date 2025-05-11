@@ -13,9 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class PluginState {
 
-    const PRE_BENCHMARK_STATE_META_KEY = '_wpbench_pre_benchmark_plugin_state';
-    const DESIRED_PLUGINS_META_KEY = '_wpbench_desired_plugins';
-    const ACTUAL_PLUGINS_META_KEY = '_wpbench_active_plugins'; // From the old hook
+    public const string PRE_BENCHMARK_STATE_META_KEY = '_wpbench_pre_benchmark_plugin_state';
+    public const string DESIRED_PLUGINS_META_KEY = '_wpbench_desired_plugins';
+    public const string ACTUAL_PLUGINS_META_KEY = '_wpbench_active_plugins'; // From the old hook
 
     /**
      * Get the current active plugin state.
@@ -27,9 +27,11 @@ class PluginState {
             'active_site'    => (array) get_option( 'active_plugins', [] ),
             'active_network' => [],
         ];
+
         if (is_multisite()) {
             $state['active_network'] = array_keys(get_site_option( 'active_sitewide_plugins', [] ));
         }
+
         return $state;
     }
 
@@ -40,6 +42,7 @@ class PluginState {
      */
     public function getCurrentCombinedActivePlugins() : array {
          $state = $this->getCurrentState();
+
          return array_unique(array_merge($state['active_site'], $state['active_network']));
     }
 
@@ -53,7 +56,9 @@ class PluginState {
     public function savePreBenchmarkState(int $postId) : array {
         $currentState = $this->getCurrentState();
         $jsonState = wp_json_encode($currentState);
+
         update_post_meta($postId, self::PRE_BENCHMARK_STATE_META_KEY, $jsonState);
+
         return $currentState; // Return the array form
     }
 
@@ -65,10 +70,13 @@ class PluginState {
      */
     public function getPreBenchmarkState(int $postId) : ?array {
         $jsonState = get_post_meta($postId, self::PRE_BENCHMARK_STATE_META_KEY, true);
+
         if (empty($jsonState)) {
             return null;
         }
+
         $state = json_decode($jsonState, true);
+
         return is_array($state) ? $state : null;
     }
 
@@ -83,6 +91,7 @@ class PluginState {
         $sanitizedPlugins = array_filter($desiredPlugins, function($plugin_file) {
             return is_string($plugin_file) && strpos($plugin_file, '.php') !== false && strlen($plugin_file) < 255;
         });
+
         update_post_meta($postId, self::DESIRED_PLUGINS_META_KEY, $sanitizedPlugins);
     }
 
@@ -94,6 +103,7 @@ class PluginState {
      */
     public function getDesiredState(int $postId) : array {
         $desired = get_post_meta($postId, self::DESIRED_PLUGINS_META_KEY, true);
+
         return is_array($desired) ? $desired : [];
     }
 
@@ -107,34 +117,62 @@ class PluginState {
      * @return array{to_activate: string[], to_deactivate: string[]}
      */
     public function calculateStateChanges(array $currentState, array $desiredPlugins) : array {
-        $current_site = $currentState['active_site'] ?? [];
-        $current_network = $currentState['active_network'] ?? [];
-        $current_all = array_unique(array_merge($current_site, $current_network));
+		$current_site = $currentState['active_site'] ?? [];
+		$current_network = $currentState['active_network'] ?? [];
+		$current_all = array_unique(array_merge($current_site, $current_network));
 
         // Ensure desired state is just a list of files
         $desired = array_unique($desiredPlugins);
+
+	    // --- WPBench Self-Protection: WPBench is always desired ---
+	    // Get WPBench's own plugin file path
+	    $wpbench_plugin_basename = plugin_basename(WPBENCH_PATH . 'wpbench.php');
+
+	    // This handles cases where it might be missing from $desiredPlugins due to
+	    // form submission quirks with disabled checkboxes, although UI attempts to keep it checked.
+	    if (!in_array($wpbench_plugin_basename, $desired)) {
+		    $desired[] = $wpbench_plugin_basename;
+	    }
+	    // --- End WPBench Self-Protection ---
 
         // Determine what needs changing based only on *site* plugins if user cannot manage network
         $can_manage_network = is_multisite() && current_user_can('manage_network_plugins');
 
         // Plugins to deactivate: Are currently active (site only unless network admin) AND NOT in the desired list.
         $deactivate_candidates = $can_manage_network ? $current_all : $current_site;
+
         // Ensure we don't try to deactivate network plugins if not network admin, even if they were somehow in $current_site
         if (!$can_manage_network) {
             $deactivate_candidates = array_diff($deactivate_candidates, $current_network);
         }
+
+		// Plugins to deactivate: Are a deactivation candidate and is NOT desired
         $to_deactivate = array_diff($deactivate_candidates, $desired);
 
         // Plugins to activate: Are in the desired list AND NOT currently active (anywhere).
         $to_activate = array_diff($desired, $current_all);
 
-         // If not network admin, remove any plugins from $to_activate that are *only* network administrable?
-         // This logic gets complex. For now, assume activate only tries site-level activation.
-         // The `PluginManager` should handle permissions more granularly if needed.
+	    // --- WPBench Self-Protection: Yank it out of the to_activate and to_deactivate plugin lists ---
+
+	    // Remove WPBench from to_deactivate
+	    $to_deactivate = array_values(array_diff($to_deactivate, [$wpbench_plugin_basename]));
+
+	    // Remove WPBench from to_activate (it should always be active).
+	    $to_activate = array_values(array_diff($to_activate, [$wpbench_plugin_basename]));
+
+	    // --- End WPBench Self-Protection ---
+
+		// If not network admin, remove any plugins from $to_activate that are *only* network administrable?
+		// This logic gets complex. For now, assume activate only tries site-level activation.
+		// The `PluginManager` should handle permissions more granularly if needed.
+
+	    // Re-index arrays
+	    $to_activate = array_values(array_unique($to_activate));
+		$to_deactivate = array_values(array_unique($to_deactivate));
 
         return [
-            'to_activate'   => array_values(array_unique($to_activate)), // Re-index arrays
-            'to_deactivate' => array_values(array_unique($to_deactivate)),
+            'to_activate'   => $to_activate,
+            'to_deactivate' => $to_deactivate,
         ];
     }
 
@@ -149,17 +187,42 @@ class PluginState {
      */
     public function saveActualPluginsListHook( $post_id, WP_Post $post ) {
         if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) { return; }
+
         // Use AdminBenchmark constant for post type check
         if ( AdminBenchmark::POST_TYPE !== $post->post_type ) { return; }
 
-        $currentState = $this->getCurrentState();
-        $active_plugins_list_for_meta = [];
-        $all_plugins_info = get_plugins();
-        $all_current_active = array_unique(array_merge($currentState['active_site'], $currentState['active_network']));
+	    $currentState = $this->getCurrentState();
+	    $active_plugins_list_for_meta = [];
+	    $all_plugins_info = get_plugins();
+	    $all_current_active = array_unique(array_merge($currentState['active_site'], $currentState['active_network']));
 
-        foreach ($all_current_active as $plugin_file) { /* ... Identical logic to build list ... */ }
+	    foreach ($all_current_active as $plugin_file) {
+		    $plugin_data = $all_plugins_info[$plugin_file] ?? null;
 
-        update_post_meta($post_id, self::ACTUAL_PLUGINS_META_KEY, $active_plugins_list_for_meta);
+		    if (!$plugin_data && is_multisite()) {
+			    $plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
+
+			    if (file_exists($plugin_path)) {
+					$plugin_data = get_plugin_data($plugin_path);
+			    }
+		    }
+
+		    if ($plugin_data && !empty($plugin_data['Name'])) {
+			    $active_plugins_list_for_meta[] = [
+					'name' => $plugin_data['Name'],
+					'version' => $plugin_data['Version'],
+					'file' => $plugin_file
+			    ];
+		    } else {
+			    $active_plugins_list_for_meta[] = [
+					'name' => $plugin_file . ' (Info Missing)',
+					'version' => 'N/A',
+					'file' => $plugin_file
+			    ];
+		    }
+	    }
+
+	    update_post_meta($post_id, self::ACTUAL_PLUGINS_META_KEY, $active_plugins_list_for_meta);
     }
 
 }

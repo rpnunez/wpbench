@@ -57,6 +57,7 @@ class BenchmarkCompare {
         $benchmarks_data = []; $error_messages = [];
         foreach ($post_ids as $post_id) {
             $post = get_post($post_id);
+
             // Ensure post exists and is the correct type
             if (!$post || $post->post_type !== AdminBenchmark::POST_TYPE) {
                 $error_messages[] = sprintf(__('Invalid benchmark ID or type for post %d.', 'wpbench'), $post_id);
@@ -76,6 +77,10 @@ class BenchmarkCompare {
                 'profile_state_during_run' => get_post_meta($post_id, AdminBenchmark::META_PROFILE_STATE_DURING_RUN, true),
                 'score' => get_post_meta($post_id, AdminBenchmark::META_SCORE, true),
             ];
+
+            //?// $benchmarks_data[$post_id]['profile_title'] = get_the_title($benchmarks_data[$post_id]['profile_id_used']);
+            //?// $benchmarks_data[$post_id]['profile_link'] = get_edit_post_link($benchmarks_data[$post_id]['profile_id_used']);
+
             // Basic check/ensure array type for data expected as arrays
             $benchmarks_data[$post_id]['selected_tests'] = is_array($benchmarks_data[$post_id]['selected_tests']) ? $benchmarks_data[$post_id]['selected_tests'] : [];
             $benchmarks_data[$post_id]['desired_plugins'] = is_array($benchmarks_data[$post_id]['desired_plugins']) ? $benchmarks_data[$post_id]['desired_plugins'] : [];
@@ -85,7 +90,9 @@ class BenchmarkCompare {
             $benchmarks_data[$post_id]['profile_state_during_run'] = is_array($benchmarks_data[$post_id]['profile_state_during_run']) ? $benchmarks_data[$post_id]['profile_state_during_run'] : [];
         }
 
-        if (count($benchmarks_data) < 2) { wp_die(/*...*/); }
+        if (count($benchmarks_data) < 2) {
+            wp_die(/*...*/);
+        }
 
         // --- Prepare Variables for View ---
         $all_possible_tests = $this->testRegistry->get_available_tests();
@@ -116,7 +123,6 @@ class BenchmarkCompare {
                         <?php esc_attr_e('Select at least 2 benchmark results to compare them.', 'wpbench'); ?>
                     </span>
                 </span>
-                <?php // Tooltip CSS is now in admin-compare.css ?>
             </div>
             <?php
         }
@@ -144,4 +150,4 @@ class BenchmarkCompare {
         }
     }
 
-} // End Class BenchmarkCompare
+}

@@ -27,11 +27,16 @@ class BenchmarkProfileAdmin {
     private $pluginStateView;
     private $testRegistry;
 
-    public function __construct(PluginState $pluginState = null, PluginStateView $pluginStateView = null, TestRegistry $testRegistry = null) {
-        $this->pluginState = $pluginState ?? new PluginState();
-        $this->testRegistry = $testRegistry ?? new TestRegistry();
+    public function __construct(
+		PluginState $pluginState,
+		PluginStateView $pluginStateView,
+		TestRegistry $testRegistry
+    ) {
+        $this->pluginState = $pluginState;
+        $this->testRegistry = $testRegistry;
+
         // Ensure PluginStateView gets the correct dependencies
-        $this->pluginStateView = $pluginStateView ?? new PluginStateView($this->pluginState, $this->testRegistry);
+        $this->pluginStateView = $pluginStateView;
     }
 
     /**
@@ -143,8 +148,16 @@ class BenchmarkProfileAdmin {
     public function render_profile_config_meta_box($post) {
         // Prepare variables needed by the view
         $available_tests = $this->testRegistry->get_available_tests();
+
+		// @TODO: Refactor into TestRegistry->getSavedSelectedPosts (or maybe in BenchmarkResult ??) / a method, due to the need for an array
         $saved_selected_tests = get_post_meta($post->ID, self::META_SELECTED_TESTS, true);
-        $nonce_action = 'wpbench_save_profile_meta';
+
+	    // Ensure it is always an array
+	    if (!is_array($saved_selected_tests)) {
+		    $saved_selected_tests = [];
+	    }
+
+	    $nonce_action = 'wpbench_save_profile_meta';
         $nonce_name = 'wpbench_profile_nonce';
         $tests_input_name = 'profile_selected_tests[]'; // Input name for checkboxes
         $config_input_prefix = 'profile_config_'; // Input name prefix for config values
@@ -236,7 +249,7 @@ class BenchmarkProfileAdmin {
         }
 
         $profile_id = isset($_POST['profile_id']) ? absint($_POST['profile_id']) : 0;
-        if ($profile_id <= 0 || get_post_type($profile_id) !== BenchmarkProfileAdmin::POST_TYPE) {
+        if ($profile_id <= 0 || get_post_type($profile_id) !== self::POST_TYPE) {
             wp_send_json_error('Invalid profile ID.', 400);
         }
 

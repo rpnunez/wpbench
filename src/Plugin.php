@@ -9,6 +9,10 @@ use WPBench\PluginStateView;
 use WPBench\PluginManager;
 use WPBench\TestRegistry;
 use WPBench\WPBenchSettings;
+use WPBench\Assets;
+use WPBench\Logger;
+use WP_Error;
+use WP_Post;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -22,13 +26,16 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class Plugin {
 
-    private static $instance = null;
-    private $pluginStateHandler;
-    private $assetsHandler;
-    private $adminBenchmarkHandler;
-    private $adminProfileHandler;
-    private $testRegistry;
-	private $settings_handler;
+    protected static $instance;
+    private \WPBench\PluginState $pluginStateHandler;
+    private \WPBench\PluginStateView $pluginStateViewHandler;
+	private \WPBench\PluginManager $pluginManager;
+    private \WPBench\Assets $assetsHandler;
+    private \WPBench\AdminBenchmark $adminBenchmarkHandler;
+    private \WPBench\BenchmarkProfileAdmin $adminProfileHandler;
+	private \WPBench\BenchmarkScore $benchmarkScore;
+    private \WPBench\TestRegistry $testRegistry;
+	private \WPBench\WPBenchSettings $settingsHandler;
 
     /**
      * Constructs the main plugin object.
@@ -43,18 +50,33 @@ final class Plugin {
         // Instantiate core utilities first
         $this->testRegistry = new TestRegistry();
         $this->pluginStateHandler = new PluginState();
-	    $this->settings_handler = new WPBenchSettings(); // <-- Instantiate Settings handler
+	    $this->settingsHandler = new WPBenchSettings();
 
-        // Instantiate view/manager that might depend on core utilities
-        $pluginStateView = new PluginStateView($this->pluginStateHandler, $this->testRegistry);
-        $pluginManager = new PluginManager(); // Contains risky operations
+        $this->pluginStateViewHandler = new PluginStateView(
+			$this->pluginStateHandler,
+			$this->testRegistry
+        );
+        $this->pluginManager = new PluginManager(); // Contains risky operations
+
+	    $this->benchmarkScore = new BenchmarkScore();
 
         // Instantiate asset handler
         $this->assetsHandler = new Assets();
 
         // Instantiate main admin controllers, passing dependencies
-        $this->adminBenchmarkHandler = new AdminBenchmark($this->pluginStateHandler, $pluginStateView, $this->testRegistry, $pluginManager);
-        $this->adminProfileHandler = new BenchmarkProfileAdmin($this->pluginStateHandler, $pluginStateView, $this->testRegistry);
+        $this->adminBenchmarkHandler = new AdminBenchmark(
+			$this->pluginManager,
+			$this->pluginStateHandler,
+			$this->pluginStateViewHandler,
+			$this->testRegistry,
+			$this->benchmarkScore
+        );
+
+        $this->adminProfileHandler = new BenchmarkProfileAdmin(
+			$this->pluginStateHandler,
+			$this->pluginStateViewHandler,
+			$this->testRegistry
+        );
 
         $this->loadPlugin();
     }
@@ -93,7 +115,7 @@ final class Plugin {
         add_action( 'admin_menu', [ $this->adminBenchmarkHandler, 'add_admin_menu' ] );
 
 	    // --- Initialize Settings Page ---
-	    $this->settings_handler->init();
+	    $this->settingsHandler->init();
 
         // --- Profile Admin Hooks ---
         // Use class constants for post type hooks
@@ -171,7 +193,7 @@ final class Plugin {
     private function __clone() {}
 
     public function __wakeup() {
-        trigger_error("Unserializing is not allowed.", E_USER_ERROR);
+	    Logger::log("Unserializing is not allowed.", E_USER_ERROR);
     }
     // --- End Singleton pattern guards ---
 
