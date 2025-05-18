@@ -147,6 +147,9 @@ class DBWrite implements BaseBenchmarkTest {
             'default_value' => 100,
             'min_value'     => 10,
             'max_value'     => 2500,
+            'target'        => 0.3,  // Target value specific to DB Write test
+            'weight'        => 0.30, // Weight specific to DB Write test
+
         ];
     }
 }

@@ -117,6 +117,8 @@ class File implements BaseBenchmarkTest {
             'default_value' => 100,
             'min_value'     => 10,
             'max_value'     => 5000,
+            'target'        => 0.1,  // Target value specific to File test
+            'weight'        => 0.10, // Weight specific to File test
         ];
     }
 }

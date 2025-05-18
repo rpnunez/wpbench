@@ -156,15 +156,23 @@ if ( ! class_exists( 'WP_Text_Diff_Renderer_Table', false ) ) {
                 $best_test_value = PHP_FLOAT_MAX;
             }
 
-            foreach($benchmark_ids as $id) {
+            foreach ($benchmark_ids as $id) {
                 $value = null;
                 $error = null;
-                if (in_array($test_id, $benchmarks_data[$id]['selected_tests'] ?? []) && isset($benchmarks_data[$id]['results'][$test_id])) {
+
+                if (
+                        in_array($test_id, $benchmarks_data[$id]['selected_tests'] ?? []) &&
+                        isset($benchmarks_data[$id]['results'][$test_id])
+                ) {
                     $result_data = $benchmarks_data[$id]['results'][$test_id];
                     $value = $result_data[$value_key] ?? null;
                     $error = $result_data['error'] ?? null;
                 }
-                $test_values[$id] = ['value' => is_numeric($value) ? (float)$value : null, 'error' => $error];
+
+                $test_values[$id] = [
+                    'value' => is_numeric($value) ? (float)$value : null,
+                    'error' => $error
+                ];
 
                 // Find best value (handling nulls and errors)
                 if ($test_values[$id]['value'] !== null && $test_values[$id]['error'] === null) {

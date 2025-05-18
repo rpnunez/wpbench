@@ -25,6 +25,9 @@ class CPU implements BaseBenchmarkTest {
             'default_value' => 100000,
             'min_value'     => 1000,
             'max_value'     => 10000000,
+            'target'        => 0.5,  // Target value specific to CPU test
+            'weight'        => 0.30, // Weight specific to CPU test
+
         ];
     }
 

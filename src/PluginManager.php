@@ -2,7 +2,7 @@
 namespace WPBench;
 
 use WP_Error;
-use WPBench\PluginState;    // Assuming this is the correct namespace for PluginState
+use WPBench\PluginState;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -37,9 +37,11 @@ class PluginManager {
 	    $to_activate   = array_values(array_diff( $to_activate, [$wpbench_plugin_basename]));
 	    $to_deactivate = array_values(array_diff($to_deactivate, [$wpbench_plugin_basename]));
 
-	    if ( count( $to_activate) !== $to_activate_orig_count || count($to_deactivate) !== $to_deactivate_orig_count) {
-			$errorString = __('WPBench plugin itself was filtered out from activation/deactivation targets.', 'wpbench');
-		    $errors['plugin_manager_safeguard'] = $errorString;
+	    if (
+			count( $to_activate) !== $to_activate_orig_count ||
+			count($to_deactivate) !== $to_deactivate_orig_count
+	    ) {
+		    $errors['plugin_manager_safeguard'] = __('WPBench plugin itself was filtered out from activation/deactivation targets.', 'wpbench');
 
 		    Logger::log('PluginManager filtered out WPBench from activation/deactivation targets. This indicates a potential logic flow issue upstream.', 'security');
 	    }
@@ -56,91 +58,66 @@ class PluginManager {
 				// Deactivate silently (suppress hooks)
 				$deactivate_result = deactivate_plugins( $to_deactivate, true, false ); // false = not network wide
 
-				if ( is_wp_error( $deactivate_result ) ) {
-					$errorString = "Error deactivating plugins: " . ( isset( $deactivate_result ) ? $deactivate_result->get_error_message() : 'Unknown error' );
+				if ( is_wp_error( $deactivate_result ) || ($deactivate_result === false || !isSet($deactivate_result)) ) {
+					$errors['deactivation'][] = "Error deactivating plugins: " . ( isset( $deactivate_result ) ? $deactivate_result->get_error_message() : 'Unknown error' );
+					$success = false;
 
-					$errors['deactivation'] = $errorString;
-
-					$success = false; // Mark as failed if deactivation fails
-
-					Logger::log($errorString, E_USER_WARNING);
+					Logger::log( $errors, E_USER_WARNING );
 
 					// @TODO: Bail early on deactivation failure? Might be safer.
 					// return ['success' => false, 'errors' => $errors, 'final_state' => $this->getCurrentStateForReturn()];
-				} elseif ( $deactivate_result === false ) {
-					$errorString = "Failed deactivating (unknown reason, check file path/permissions).";
-
-					$errors['deactivation'] = $errorString;
-
-					$success = false;
-
-					Logger::log($errorString, E_USER_WARNING);
+				} else {
+					Logger::log( 'Plugin deactivated: '. print_r($deactivate_result, true), 'info' );
 				}
 			} catch (\Exception $e) {
-				$success = false;
+				$errors['deactivation'][] = "Exception caught while deactivating plugins: " . $e->getMessage();;
 
-				$errorString = "Exception caught while deactivating plugins: " . $e->getMessage();
-
-				$errors['deactivation'] = $errorString;
-
-				Logger::log($errorString, E_USER_WARNING);
+				Logger::log( $errors, E_USER_WARNING );
 			}
         }
 
         // --- Activate second (only if deactivation didn't fail hard) ---
         if ( $success && ! empty( $to_activate)) {
-            $activation_sub_errors = [];
-
             foreach ( $to_activate as $plugin_file) {
 	            // Skip if somehow already active
                 if (is_plugin_active($plugin_file)) {
 					continue;
                 }
 
+	            $success = true; // Mark as failed if any activation fails
+
 				try {
 					// Activate silently, not network wide
-					$activate_result = activate_plugin( $plugin_file, '', false, true );
+					$activateResult = activate_plugin( $plugin_file, '', false, true );
 
-					if ( is_wp_error( $activate_result ) ) {
-						$errorString = "Error activating plugin: " . $activate_result->get_error_message();
-
-						$activation_sub_errors[ $plugin_file ] = $errorString;
-
-						$success = false; // Mark as failed if any activation fails
-
-						Logger::log($errorString, E_USER_WARNING);
-
-						// @TODO: Continue trying others? Or bail? Bailing might leave partially activated state. Continue for now.
-					} elseif ( $activate_result === false ) {
-						$errorString = "Failed activating (unknown reason, check file path/permissions).";
-
-						$activation_sub_errors[ $plugin_file ] = $errorString;
-
+					if ( is_wp_error( $activateResult ) || ($activateResult === false || !isSet($activateResult)) ) {
+						$errors['activation'][ $plugin_file ] = "Error activating plugin: " . $activateResult->get_error_message();;
 						$success = false;
 
-						Logger::log($errorString, E_USER_WARNING);
+						Logger::log($errors['activation'][ $plugin_file ], E_USER_WARNING);
+
+						// @TODO: Continue trying others? Or bail? Bailing might leave partially activated state. Continue for now.
+					} else {
+						Logger::log( 'Plugin '. $plugin_file .' activated: '. print_r($activateResult, true), 'info' );
 					}
 				} catch (\Exception $e) {
-					$errorString = "Exception caught while activating plugin: $plugin_file: " . $e->getMessage();
-
-					$activation_sub_errors[ $plugin_file ] = $errorString;
-
+					$errors['activation'][ $plugin_file ] = "Exception caught while activating plugin: $plugin_file: " . $e->getMessage();;
 					$success = false;
 
-					Logger::log($errorString, E_USER_WARNING);
+					Logger::log('Error activating plugin '. $plugin_file .': '. $errors['activation'][ $plugin_file ], E_USER_WARNING);
 				}
             }
-
-            if (!empty($activation_sub_errors)) {
-                $errors['activation'] = $activation_sub_errors;
-            }
+        } else {
+			Logger::log('Skipped activation plugin section because an error occurred while deactivation plugin section.', 'error');
         }
 
-        return [
+        $result = [
             'success' => $success,
             'errors' => $errors,
             'final_state' => $this->getCurrentStateForReturn() // Return the state *after* changes attempted
         ];
+
+		Logger::log('executeChange final return value: '. print_r($result, true), 'info');
     }
 
      /**
@@ -163,20 +140,30 @@ class PluginManager {
         //$restoreChanges = $pluginStateUtil->calculateStateChanges($currentState, $targetState['active_site']);
 	    $restoreChanges = $pluginStateUtil->calculateStateChanges(
 			$currentState,
-			array_unique(array_merge($targetState['active_site'], $targetState['active_network']))
+			array_unique(
+				array_merge(
+					$targetState['active_site'],
+					$targetState['active_network']
+				)
+			)
 	    );
-	    // Note: This simple restore assumes we only need to restore site plugins. Restoring network may need more logic.
 
-        $restoreResult = $this->executeChange($restoreChanges['to_activate'], $restoreChanges['to_deactivate']);
+	    // Note: This simple restore assumes we only need to restore site plugins. Restoring network may need more logic.
+        $restoreResult = $this->executeChange(
+			$restoreChanges['to_activate'],
+			$restoreChanges['to_deactivate']
+        );
 
         // Prepend context to errors
         foreach ($restoreResult['errors'] as $type => $messages) {
             $errors['restoration_' . $type] = $messages;
         }
 
+		$errors = array_merge($errors, $restoreResult['errors']);
+
         return [
             'success' => $restoreResult['success'],
-            'errors' => $errors
+            'errors' => $errors,
         ];
     }
 

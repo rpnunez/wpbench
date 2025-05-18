@@ -7,6 +7,7 @@ use WPBench\PluginStateView;
 use WPBench\TestRegistry;
 use WP_Error;
 use WP_Post;
+
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
@@ -23,20 +24,12 @@ class BenchmarkProfileAdmin {
     const META_SELECTED_TESTS = '_wpbench_profile_selected_tests';
     const META_CONFIG_PREFIX = '_wpbench_profile_config_'; // Prefix for config values
 
-    private $pluginState;
-    private $pluginStateView;
-    private $testRegistry;
-
     public function __construct(
-		PluginState $pluginState,
-		PluginStateView $pluginStateView,
-		TestRegistry $testRegistry
+		private PluginState $pluginState,
+	    private PluginStateView $pluginStateView,
+	    private TestRegistry $testRegistry
     ) {
-        $this->pluginState = $pluginState;
-        $this->testRegistry = $testRegistry;
 
-        // Ensure PluginStateView gets the correct dependencies
-        $this->pluginStateView = $pluginStateView;
     }
 
     /**
@@ -104,8 +97,10 @@ class BenchmarkProfileAdmin {
 
         // Register individual config meta fields (allows easier querying if needed)
         $available_tests = $this->testRegistry->get_available_tests();
+
         foreach ($available_tests as $id => $info) {
              $meta_key = self::META_CONFIG_PREFIX . $id;
+
              register_post_meta( self::POST_TYPE, $meta_key, [
                 'type'              => 'integer',
                 'description'       => sprintf(__('Configuration value for the %s test.', 'wpbench'), $info['name'] ?? $id),
@@ -117,27 +112,31 @@ class BenchmarkProfileAdmin {
     }
     
     public function add_profile_meta_boxes($post) {
-         add_meta_box(
-            'wpbench_profile_config_metabox',
-            __( 'Profile Configuration', 'wpbench' ),
-            [ $this, 'render_profile_config_meta_box' ],
-            BenchmarkProfileAdmin::POST_TYPE,
-            'normal',
-            'high'
-        );
-          add_meta_box(
-            'wpbench_profile_plugins_metabox',
-            __( 'Desired Plugin State for Profile', 'wpbench' ),
-            [ $this, 'render_profile_plugins_meta_box' ],
-            BenchmarkProfileAdmin::POST_TYPE,
-            'normal',
-            'default'
-        );
+		add_meta_box(
+			'wpbench_profile_config_metabox',
+			__( 'Profile Configuration', 'wpbench' ),
+			[ $this, 'render_profile_config_meta_box' ],
+			BenchmarkProfileAdmin::POST_TYPE,
+			'normal',
+			'high'
+		);
+
+		add_meta_box(
+			'wpbench_profile_plugins_metabox',
+			__( 'Desired Plugin State for Profile', 'wpbench' ),
+			[ $this, 'render_profile_plugins_meta_box' ],
+			BenchmarkProfileAdmin::POST_TYPE,
+			'normal',
+			'default'
+		);
     }
     
     // Generic sanitizer needed if register_meta_fields stays here
     public function sanitize_string_array_meta($meta_value) {
-        if (!is_array($meta_value)) return [];
+        if (!is_array($meta_value)) {
+			return [];
+        }
+
         return array_map('sanitize_text_field', $meta_value);
     }
 
@@ -145,7 +144,7 @@ class BenchmarkProfileAdmin {
      * Render the main configuration meta box content (Tests & Config).
      * Prepares variables and includes the view file.
      */
-    public function render_profile_config_meta_box($post) {
+    public function render_profile_config_meta_box($post): void {
         // Prepare variables needed by the view
         $available_tests = $this->testRegistry->get_available_tests();
 
@@ -190,6 +189,7 @@ class BenchmarkProfileAdmin {
         // --- Standard checks ---
         $nonce_action = 'wpbench_save_profile_meta';
         $nonce_name = 'wpbench_profile_nonce';
+
         if (!isset($_POST[$nonce_name]) || !wp_verify_nonce($_POST[$nonce_name], $nonce_action)) { 
             return;
         }
@@ -221,6 +221,7 @@ class BenchmarkProfileAdmin {
                 $value = absint($_POST[$input_name]);
                 $value = max($info['min_value'] ?? 0, $value);
                 $value = min($info['max_value'] ?? 1000000, $value);
+
                 update_post_meta($post_id, $meta_key, $value);
             } else {
                 // Optionally delete meta if not submitted, or save default?
@@ -244,16 +245,19 @@ class BenchmarkProfileAdmin {
      */
     public function handle_ajax_load_profile() {
         check_ajax_referer('wpbench_load_profile_nonce', 'nonce');
+
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Permission denied.', 403);
         }
 
         $profile_id = isset($_POST['profile_id']) ? absint($_POST['profile_id']) : 0;
+
         if ($profile_id <= 0 || get_post_type($profile_id) !== self::POST_TYPE) {
             wp_send_json_error('Invalid profile ID.', 400);
         }
 
         $profile_post = get_post($profile_id);
+
         if (!$profile_post || $profile_post->post_status !== 'publish') {
              wp_send_json_error('Profile not found or not published.', 404);
         }

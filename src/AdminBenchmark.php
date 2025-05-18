@@ -28,6 +28,7 @@ class AdminBenchmark {
     const string META_PROFILE_ID_USED = '_wpbench_profile_id_used';
     const string META_PROFILE_STATE_DURING_RUN = '_wpbench_profile_state_during_benchmark'; // Stores profile data array
 	const string META_SCORE = '_wpbench_score';
+	const string META_ERRORS_DURING_TESTS = '_wpbench_errors_during_tests';
 
 	private PluginState $pluginState;
     private PluginStateView $pluginStateView;
@@ -128,7 +129,7 @@ class AdminBenchmark {
 				    'additionalProperties' => true,
 				],
 			],
-			'sanitize_callback' => [$this, 'sanitize_array_meta'], // Use a generic sanitizer
+			'sanitize_callback' => [$this, 'sanitize_meta_object' ], // Use a generic sanitizer
 			// 'auth_callback' => function() { return current_user_can('edit_posts'); } // Default auth is fine
 		]);
 
@@ -138,7 +139,7 @@ class AdminBenchmark {
 			'description'       => __('Results data including timings, usage, and errors.', 'wpbench'),
 			'single'            => true,
 			'show_in_rest'      => true, // Expose complex object schema if needed
-			'sanitize_callback' => [$this, 'sanitize_array_meta'],
+			'sanitize_callback' => [$this, 'sanitize_meta_object' ],
 		]);
 
 		// Meta field for storing which tests were selected for this run
@@ -170,7 +171,7 @@ class AdminBenchmark {
 			'description'       => __('Configuration data array from the profile used during this run.', 'wpbench'),
 			'single'            => true,
 			'show_in_rest'      => true, // Adjust schema if needed
-			'sanitize_callback' => [$this, 'sanitize_array_meta'],
+			'sanitize_callback' => [$this, 'sanitize_meta_object' ],
 		]);
 
 	    // Meta field for the calculated benchmark score
@@ -181,6 +182,15 @@ class AdminBenchmark {
 		    'show_in_rest'      => true,
 		    'sanitize_callback' => 'absint',
 		    // Add default value if needed via 'default' key, though calculated dynamically
+	    ]);
+
+	    // Meta field for the calculated benchmark score
+	    register_post_meta( self::POST_TYPE, self::META_ERRORS_DURING_TESTS, [
+		    'type'              => 'object',
+		    'description'       => __('Overall calculated benchmark score (0-100, higher is better).', 'wpbench'),
+		    'single'            => true,
+		    'show_in_rest'      => true,
+		    'sanitize_callback' => 'sanitize_meta_object',
 	    ]);
 
 	    // Register meta keys managed primarily by PluginState (for REST API visibility etc.)
@@ -210,14 +220,17 @@ class AdminBenchmark {
     }
 
     /** Generic sanitizer for array/object meta */
-    public function sanitize_array_meta($meta_value) {
+    public function sanitize_meta_object($meta_value) {
         // Implement more specific sanitization based on expected array structure if needed
         return is_array($meta_value) || is_object($meta_value) ? $meta_value : null;
     }
 
     /** Generic sanitizer for array of strings meta */
     public function sanitize_string_array_meta($meta_value) {
-        if (!is_array($meta_value)) return [];
+        if (!is_array($meta_value)) {
+			return [];
+        }
+
         return array_map('sanitize_text_field', $meta_value);
     }
 
@@ -309,8 +322,12 @@ class AdminBenchmark {
     /** AJAX handler for running the benchmark tests. */
     public function handle_ajax_run_benchmark() {
 		// 1. Security Checks & Basic Input Validation
+
 		// Ensure user can activate/deactivate plugins
-		if ( ! current_user_can( 'manage_options' ) || ! current_user_can( 'activate_plugins' ) || ! current_user_can( 'deactivate_plugins' ) ) {
+		if ( ! current_user_can( 'manage_options' ) ||
+		     ! current_user_can( 'activate_plugins' ) ||
+		     ! current_user_can( 'deactivate_plugins' )
+		) {
 			wp_send_json_error( [ 'message' => __( 'Permission denied. You need capabilities to manage plugins.', 'wpbench' ) ], 403 );
 		}
 
@@ -319,9 +336,9 @@ class AdminBenchmark {
 			wp_send_json_error( [ 'message' => __( 'Nonce verification failed.', 'wpbench' ) ], 403 );
 		}
 
-		$selected_tests_raw  = isset( $_POST['selected_tests'] ) && is_array( $_POST['selected_tests'] ) ? $_POST['selected_tests'] : [];
+		$selected_tests_raw = isset( $_POST['selected_tests'] ) && is_array( $_POST['selected_tests'] ) ? $_POST['selected_tests'] : [];
 		$desired_plugins_raw = isset( $_POST['desired_plugins'] ) && is_array( $_POST['desired_plugins'] ) ? $_POST['desired_plugins'] : [];
-		$profile_id_used     = isset( $_POST['profile_id_used'] ) ? absint( $_POST['profile_id_used'] ) : null;
+		$profile_id_used  = isset( $_POST['profile_id_used'] ) ? absint( $_POST['profile_id_used'] ) : null;
 
 		if ( empty( $selected_tests_raw ) ) {
 		    wp_send_json_error( [ 'message' => __( 'No benchmark tests were selected to run.', 'wpbench' ) ],400 );
@@ -329,25 +346,24 @@ class AdminBenchmark {
 
 	    // --- 2. Create Post Early ---
 	    $benchmark_name = isset( $_POST['benchmark_name'] ) ? sanitize_text_field( wp_unslash( $_POST['benchmark_name'] ) ) : 'Unnamed Benchmark';
-	    $post_data      = [
-			'post_title'  => $benchmark_name,
-            'post_type'   => self::POST_TYPE,
+	    $post_data = [
+			'post_title' => $benchmark_name,
+            'post_type' => self::POST_TYPE,
             'post_status' => 'publish',
             'post_author' => get_current_user_id()
 	    ];
-	    $post_id        = wp_insert_post( $post_data, true );
+	    $post_id = wp_insert_post( $post_data, true );
 
 		if ( is_wp_error( $post_id ) || $post_id === 0 ) {
-		    wp_send_json_error( [
-				'message' => __( 'Error creating benchmark result post:', 'wpbench' ) . ( is_wp_error( $post_id ) ? ' ' . $post_id->get_error_message() : '' ) ],
-		    500
-		    );
+		    wp_send_json_error( [ 'message' => __( 'Error creating benchmark result post:', 'wpbench' ) . ( is_wp_error( $post_id ) ? ' ' . $post_id->get_error_message() : '' ) ],
+		    500 );
 		}
 
 	    // --- 3. Save Initial States, Config, and Profile Data ---
+
 	    $preBenchmarkState = $this->pluginState->savePreBenchmarkState( $post_id ); // Save pre-run state
-	    $all_plugin_files  = array_keys( get_plugins() );
-	    $desired_plugins   = array_intersect( $desired_plugins_raw, $all_plugin_files );
+	    $all_plugin_files = array_keys( get_plugins() );
+	    $desired_plugins = array_intersect( $desired_plugins_raw, $all_plugin_files );
 
 	    if ( is_multisite() && ! current_user_can( 'manage_network_plugins' ) ) {
 		    $current_network = $preBenchmarkState['active_network'] ?? [];
@@ -357,12 +373,15 @@ class AdminBenchmark {
 	    $this->pluginState->saveDesiredState( $post_id, $desired_plugins ); // Save desired state
 
 	    $available_tests = $this->testRegistry->get_available_tests();
-	    $valid_test_ids  = array_keys( $available_tests );
-	    $selected_tests  = array_intersect( $selected_tests_raw, $valid_test_ids );
-	    $config          = [ 'benchmark_name' => $benchmark_name ];
+	    $valid_test_ids = array_keys( $available_tests );
+	    $selected_tests = array_intersect( $selected_tests_raw, $valid_test_ids );
+	    $config = [
+			'benchmark_name' => $benchmark_name
+	    ];
 
 		foreach ( $available_tests as $id => $info ) {
 			$config_key            = 'config_' . $id;
+
 			$config[ $config_key ] = isset( $_POST[ $config_key ] ) ? absint( $_POST[ $config_key ] ) : ( $info['default_value'] ?? 0 );
 			$config[ $config_key ] = max( $info['min_value'] ?? 0, $config[ $config_key ] );
 			$config[ $config_key ] = min( $info['max_value'] ?? 1000000, $config[ $config_key ] );
@@ -371,33 +390,33 @@ class AdminBenchmark {
 	    update_post_meta($post_id, self::META_CONFIG, $config);
         update_post_meta($post_id, self::META_SELECTED_TESTS, $selected_tests);
 
-        // --- Save Profile Data Used ---
+        // --- Save Profile Data Used --
         $profile_state_data = null;
 
-        if ($profile_id_used && get_post_type($profile_id_used) === AdminBenchmark::POST_TYPE) {
-             update_post_meta($post_id, self::META_PROFILE_ID_USED, $profile_id_used);
+        if ( $profile_id_used && get_post_type($profile_id_used) === AdminBenchmark::POST_TYPE ) {
+			update_post_meta($post_id, self::META_PROFILE_ID_USED, $profile_id_used);
 
-             // Fetch profile data to save its state at time of run
-             $profile_selected_tests = get_post_meta($profile_id_used, BenchmarkProfileAdmin::META_SELECTED_TESTS, true);
-             $profile_desired_plugins = $this->pluginState->getDesiredState($profile_id_used);
-             $profile_config = [];
-             $profile_all_meta = get_post_meta($profile_id_used);
+			// Fetch profile data to save its state at time of run
+			$profile_selected_tests = get_post_meta($profile_id_used, BenchmarkProfileAdmin::META_SELECTED_TESTS, true);
+			$profile_all_meta = get_post_meta($profile_id_used);
+			$profile_desired_plugins = $this->pluginState->getDesiredState($profile_id_used);
+			$profile_config = [];
 
-             foreach ($profile_all_meta as $meta_key => $meta_values) {
-                 if (strpos($meta_key, BenchmarkProfileAdmin::META_CONFIG_PREFIX) === 0) {
-                      $test_id_key = substr($meta_key, strlen(BenchmarkProfileAdmin::META_CONFIG_PREFIX));
+			foreach ($profile_all_meta as $meta_key => $meta_values) {
+				if ( str_starts_with( $meta_key, BenchmarkProfileAdmin::META_CONFIG_PREFIX ) ) {
+					$test_id_key = substr($meta_key, strlen(BenchmarkProfileAdmin::META_CONFIG_PREFIX));
 
-                      $profile_config[ 'config_' . $test_id_key ] = $meta_values[0] ?? null;
-                 }
-             }
+					$profile_config[ 'config_' . $test_id_key ] = $meta_values[0] ?? null;
+				}
+			}
 
-             $profile_state_data = [
-                 'profile_id' => $profile_id_used,
-                 'profile_title' => get_the_title($profile_id_used),
-                 'selected_tests' => is_array($profile_selected_tests) ? $profile_selected_tests : [],
-                 'config' => $profile_config,
-                 'desired_plugins' => $profile_desired_plugins
-             ];
+			$profile_state_data = [
+				'profile_id' => $profile_id_used,
+				'profile_title' => get_the_title($profile_id_used),
+				'selected_tests' => is_array($profile_selected_tests) ? $profile_selected_tests : [],
+				'config' => $profile_config,
+				'desired_plugins' => $profile_desired_plugins
+			];
 
 			update_post_meta($post_id, self::META_PROFILE_STATE_DURING_RUN, $profile_state_data); // Save data array
         }
@@ -405,7 +424,6 @@ class AdminBenchmark {
         // --- 4. Prepare for Benchmark ---
         $results = [];
 		$start_time = null;
-		$all_errors = [];
         $state_change_result = null;
 		$benchmark_exception = null;
 		$restore_result = null;
@@ -434,62 +452,59 @@ class AdminBenchmark {
 				 Logger::log("No state change needed for $post_id.");
 			 }
 
-            // Run Benchmarks
-            $start_time = microtime(true);
+			// Run Benchmarks
+			$start_time = microtime(true);
 
-            foreach ($selected_tests as $test_id) {
-                $test_instance = $this->testRegistry->get_test_instance($test_id);
+            foreach ($selected_tests as &$test_id ) {
+	            $test_instance = $this->testRegistry->get_test_instance($test_id);
 
-                if ($test_instance instanceof BaseBenchmarkTest) {
-                     $config_value = $config['config_' . $test_id] ?? $available_tests[$test_id]['default_value'];
-                     $results[$test_id] = $test_instance->run($config_value);
-                } else {
-					$results[$test_id] = [
-						'error' => "Test instance for '$test_id' could not be created."
-					];
-				}
+	            if ($test_instance instanceof BaseBenchmarkTest) {
+		            // Retrieve the test configuration value (default or custom)
+		            $test_info = $test_instance->get_info();
+		            $config_value = $config['config_' . $test_id] ?? $test_info['default_value'];
+
+					try {
+						// Run the test and store the results
+						$results[$test_id] = $test_instance->run($config_value);
+					} catch (\Throwable $e) {
+						$results[$test_id]['error'][] = get_class($e) . ": " . $e->getMessage();
+					}
+	            } else {
+		            // Store an error result if the test instance could not be created
+		            $results[$test_id]['error'][] = "Test instance for '$test_id' could not be created.";
+	            }
             }
 
-			$end_time = microtime(true); $results['total_time'] = round( $end_time - $start_time, 4 );
+			$end_time = microtime(true);
 
-	        // --- Calculate Score ---
+			$results['total_time'] = round( $end_time - $start_time, 4 );
+
 	        // Calculate score only if state change was successful (or not needed) and benchmark loop completed
 	        $score = $this->benchmarkScore->calculate($results, $config, $selected_tests);
-	        // --- End Score Calculation ---
 
-	        Logger::log("Calculated BenchmarkScore of $score for post id $post_id...");
-        } catch (\Exception $e) { 
-            $benchmark_exception = $e; Logger::log("WPBench Exception ($post_id): " . $e->getMessage());
-        } catch (\Error $e) {
-            $benchmark_exception = $e; Logger::log("WPBench Error ($post_id): " . $e->getMessage());
+	        Logger::log("Calculated BenchmarkScore of $score for BenchmarkResult id $post_id...");
+        } catch (\Throwable $e) { // Catch Throwable for PHP 7+
+	        Logger::log("WPBench Exception/Error during benchmark $post_id: " . $e->getMessage(), 'error');
+
+	        // If exception happened during benchmark run, calculate partial time if possible
+	        if ($start_time && !isset($results['total_time'])) {
+				$results['total_time'] = round( microtime(true) - $start_time, 4 );
+	        }
         } finally {
             // --- 5c. Restore Original Plugin State (using PluginManager) ---
             if ($needs_state_change) {
-                Logger::log("Attempting state restoration for $post_id...");
-
                 $currentStateAfterTest = $this->pluginState->getCurrentState();
                 $restore_result = $this->pluginManager->restoreState($preBenchmarkState, $currentStateAfterTest);
 
                 if (!empty($restore_result['errors'])) {
-                    $all_errors['state_restore'] = $restore_result['errors'];
+                    $results['errors'][] = $restore_result['errors'];
 
                     Logger::log("Restoration errors for $post_id: " . print_r($restore_result['errors'], true));
                 }
-
-                Logger::log("Restoration attempt complete for $post_id.");
-            } else { 
-                Logger::log("Skipping restoration (no changes needed) for $post_id.");
             }
-        } // end try...finally
+        }
 
 		// --- 6. Finalize and Save Results ---
-		if ($benchmark_exception) {
-	        $all_errors['benchmark_runtime'] = get_class($benchmark_exception) . ": " . $benchmark_exception->getMessage();
-		}
-
-		if (!empty($all_errors)) {
-		    $results['errors'] = $all_errors;
-		}
 
 	    // --- Save Score
 	    if ($score !== null) {
@@ -504,7 +519,7 @@ class AdminBenchmark {
 		// --- 7. Send Response ---
 		$final_message = __( 'Benchmark completed!', 'wpbench' );
 
-		if (!empty($all_errors)) {
+		if (!empty($results['errors']) && !empty($results['state_change']['errors'])) {
 		    $final_message .= ' ' . __( 'However, errors occurred. Check results for details.', 'wpbench');
 		}
 

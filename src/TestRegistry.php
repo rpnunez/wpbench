@@ -68,19 +68,24 @@ class TestRegistry {
 
 		$this->available_tests = []; // Initialize as empty array
 		$test_dir = WPBENCH_PATH . 'src/BenchmarkTest/';
+
 		if (!is_dir($test_dir)) {
 			trigger_error("WPBench: BenchmarkTest directory not found at $test_dir", E_USER_WARNING);
+
 			return $this->available_tests;
 		}
 
-		$files = glob( $test_dir . '*.php' );
-		if ( empty($files) ) {
+		$potential_test_files = glob( $test_dir . '*.php' );
+
+		if ( empty($potential_test_files) ) {
 			// This isn't necessarily an error, might just be no tests defined yet
-			// trigger_error("WPBench: No PHP files found in BenchmarkTest directory $test_dir", E_USER_WARNING);
+			Logger::log("WPBench: No PHP files found in BenchmarkTest directory $test_dir", E_USER_WARNING);
+
 			return $this->available_tests;
 		}
 
-		foreach ( $files as $file ) {
+		// Loop through each potential test
+		foreach ( $potential_test_files as $file ) {
 			$basename = basename( $file, '.php' );
 
 			// Skip the interface itself AND the standard index.php file
@@ -94,40 +99,46 @@ class TestRegistry {
 			if ( class_exists( $class_name ) ) {
 				try {
 					$reflection = new \ReflectionClass( $class_name );
+
 					// Ensure it's a concrete class implementing our interface
 					if ( $reflection->implementsInterface( BaseBenchmarkTest::class ) && !$reflection->isAbstract() ) {
-
 						// Instantiate ONLY to get info - avoids running constructor logic needlessly here
 						// Note: newInstanceWithoutConstructor is safer if constructors have side effects
 						// But if get_info() relies on constructor setup, need newInstance()
 						// Let's assume get_info is safe without full construction for now.
-						$test_instance_for_info = $reflection->newInstanceWithoutConstructor();
+						//$test_instance_for_info = $reflection->newInstanceWithoutConstructor();
+						$test_instance = $reflection->newInstance(); // Create an instance
 
-						if(method_exists($test_instance_for_info, 'get_info')) {
-							$info = $test_instance_for_info->get_info();
-							// Validate the info structure basic requirements
-							if ( isset( $info['id'] ) && is_string($info['id']) && !empty($info['id']) ) {
-								$this->available_tests[ $info['id'] ] = $info; // Use the ID from get_info() as the key
+						if (method_exists($test_instance, 'get_info')) {
+							$info = $test_instance->get_info();
+
+							// Include test instance in the available test info
+							if (isset($info['id']) && is_string($info['id'])) {
+								$info['instance'] = $test_instance;
+								$info['class_name'] = $class_name;
+
+								$this->available_tests[$info['id']] = $info;
 							} else {
-								Logger::log("WPBench: Test class $class_name get_info() did not return a valid string 'id'. Skipping.", E_USER_WARNING);
+								Logger::log("TestRegistry: Test class $class_name get_info() did not return a valid string 'id'. Skipping.", E_USER_WARNING);
 							}
 						} else {
-							Logger::log("WPBench: Test class $class_name does not implement get_info() method. Skipping.", E_USER_WARNING);
+							Logger::log("TestRegistry: Test class $class_name does not implement get_info() method. Skipping.", E_USER_WARNING);
 						}
+					} else {
+						Logger::log("TestRegistry: Test class $class_name does not implement BaseBenchmarkTest interface or is abstract. Skipping.", E_USER_WARNING);
 					}
-					// else: Class exists but doesn't implement interface or is abstract - ignore silently.
 				} catch (\ReflectionException $e) {
-					Logger::log("WPBench: Reflection error for class $class_name: " . $e->getMessage(), E_USER_WARNING);
+					Logger::log("WPBench: Reflection error for $class_name - " . $e->getMessage(), E_USER_WARNING);
 				} catch (\Throwable $e) { // Catch potential errors during instantiation or get_info() call (Throwable for PHP 7+)
-					Logger::log("WPBench: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
+					Logger::log("TestRegistry: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
 				}
 			} else {
 				// This error now specifically means the autoloader found the file but couldn't load the expected class.
 				// Could be namespace typo in the file, or the file IS index.php / BaseBenchmarkTest.php which autoloader included but class_exists failed.
 				// Since we added specific checks for index/BaseBenchmarkTest, this warning is less likely now for those cases.
-				trigger_error("WPBench: Expected class $class_name not found after including/autoloading file $file. Check namespace and class definition.", E_USER_WARNING);
+				Logger::log("TestRegistry: Expected class $class_name not found after including/autoloading file $file. Check namespace and class definition.", E_USER_WARNING);
 			}
-		} // End foreach loop
+		}
 
 		// Ensure a consistent order (optional, based on ID)
 		ksort($this->available_tests);
@@ -146,23 +157,41 @@ class TestRegistry {
      */
     public function get_test_info(string $testId) : ?array {
         $tests = $this->get_available_tests(); // Ensure cache is populated
+
         return $tests[$testId] ?? null;
     }
 
-    /**
+	/**
+	 * Get an instance of a specific benchmark test class.
+	 * Caches instances for reuse within the same request.
+	 *
+	 * @param string $testId The ID of the test (e.g., 'cpu').
+	 * @return BaseBenchmarkTest|null Instance of the test class or null on failure.
+	 */
+	public function get_test_instance(string $test_id): ?BaseBenchmarkTest {
+		$available_tests = $this->get_available_tests();
+
+		// Return the instance if available
+		return $available_tests[$test_id]['instance'] ?? null;
+	}
+
+	/**
      * Get an instance of a specific benchmark test class.
      * Caches instances for reuse within the same request.
      *
      * @param string $testId The ID of the test (e.g., 'cpu').
      * @return BaseBenchmarkTest|null Instance of the test class or null on failure.
      */
-    public function get_test_instance(string $testId) : ?BaseBenchmarkTest {
+    public function get_test_instance_old(string $testId) : ?BaseBenchmarkTest {
         if (isset($this->instances[$testId])) {
             return $this->instances[$testId];
         }
 
         $info = $this->get_test_info($testId);
+
         if (!$info) {
+	        Logger::log("TestRegistry: Test ID ". $testId ." couldn't get test info.", E_USER_WARNING);
+
 			return null; // Test ID not found
         }
 
@@ -177,15 +206,16 @@ class TestRegistry {
 
 				if ($instance instanceof BaseBenchmarkTest) {
 					$this->instances[$testId] = $instance;
+
 					return $instance;
 				} else {
-					trigger_error("WPBench: Class $full_class_name does not implement BaseBenchmarkTest.", E_USER_WARNING);
+					Logger::log("TestRegistry: Class $full_class_name does not implement BaseBenchmarkTest.", E_USER_WARNING);
 				}
 			} catch (\Throwable $e) {
-				trigger_error("WPBench: Failed to instantiate test class $full_class_name: " . $e->getMessage(), E_USER_WARNING);
+				Logger::log("TestRegistry: Failed to instantiate test class $full_class_name: " . $e->getMessage(), E_USER_WARNING);
 			}
 		} else {
-			trigger_error("WPBench: Test class $full_class_name not found for ID $testId.", E_USER_WARNING);
+			Logger::log("TestRegistry: Test class $full_class_name not found for ID $testId.", E_USER_WARNING);
 		}
 
         return null;

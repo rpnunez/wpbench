@@ -186,10 +186,14 @@ class PluginState {
      * @param \WP_Post $post    The post object.
      */
     public function saveActualPluginsListHook( $post_id, WP_Post $post ) {
-        if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) { return; }
+        if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+			return;
+		}
 
         // Use AdminBenchmark constant for post type check
-        if ( AdminBenchmark::POST_TYPE !== $post->post_type ) { return; }
+        if ( AdminBenchmark::POST_TYPE !== $post->post_type ) {
+			return;
+		}
 
 	    $currentState = $this->getCurrentState();
 	    $active_plugins_list_for_meta = [];

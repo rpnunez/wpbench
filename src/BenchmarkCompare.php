@@ -2,6 +2,7 @@
 namespace WPBench;
 
 // Required classes
+use src\Helpers\Utility;
 use WPBench\AdminBenchmark; // For CPT constant & meta keys
 use WPBench\PluginState;
 use WPBench\TestRegistry;
@@ -47,14 +48,36 @@ class BenchmarkCompare {
      */
     public function render_page() {
         // --- Security & Validation ---
-        if (!current_user_can('manage_options')) { wp_die(/*...*/); }
-        $ids_raw = isset($_GET['ids']) ? sanitize_text_field($_GET['ids']) : '';
-        $post_ids = !empty($ids_raw) ? array_map('absint', explode(',', $ids_raw)) : [];
-        $post_ids = array_filter(array_unique($post_ids));
-        if (count($post_ids) < 2) { wp_die(__('Please select at least two benchmarks to compare.', 'wpbench')); }
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have access to this page.', 'wpbench'));
+        }
+
+        // Sanitize and filter incoming Benchmark IDs
+//	    $ids_raw = isset($_GET['ids']) ? sanitize_text_field(wp_unslash($_GET['ids'])) : '';
+//	    $post_ids = !empty($ids_raw) ? array_map('absint', explode(',', $ids_raw)) : [];
+//	    $post_ids = array_filter($post_ids); // Remove zeros/invalid
+//	    $post_ids = array_unique($post_ids);
+
+        $post_ids = Utility::get_cleaned_post_ids($_GET['ids']);
+
+        if (count($post_ids) < 2) {
+	        // Handle case where fewer than 2 IDs were passed in the URL
+	        wp_die(
+        '<p>' . esc_html__('Please select at least two benchmarks to compare.', 'wpbench') . '</p>' .
+                '<p><a href="' . esc_url(admin_url('edit.php?post_type=' . AdminBenchmark::POST_TYPE)) . '">' .
+                esc_html__('Go back to All Benchmarks', 'wpbench') . '</a></p>',
+                __('Comparison Error - Insufficient Selection', 'wpbench'),
+		        [
+                    'response' => 400,
+                    'back_link' => true
+                ]
+	        );
+        }
 
         // --- Fetch Data for Each Benchmark ---
-        $benchmarks_data = []; $error_messages = [];
+        $benchmarks_data = [];
+        $error_messages = [];
+
         foreach ($post_ids as $post_id) {
             $post = get_post($post_id);
 
@@ -65,7 +88,7 @@ class BenchmarkCompare {
             }
 
             // Fetch all relevant data using AdminBenchmark constants and PluginState methods
-            $benchmarks_data[$post_id] = [
+            $benchmarks_data[ $post_id ] = [
                 'post' => $post,
                 'config' => get_post_meta($post_id, AdminBenchmark::META_CONFIG, true),
                 'results' => get_post_meta($post_id, AdminBenchmark::META_RESULTS, true),
@@ -76,22 +99,46 @@ class BenchmarkCompare {
                 'profile_id_used' => get_post_meta($post_id, AdminBenchmark::META_PROFILE_ID_USED, true),
                 'profile_state_during_run' => get_post_meta($post_id, AdminBenchmark::META_PROFILE_STATE_DURING_RUN, true),
                 'score' => get_post_meta($post_id, AdminBenchmark::META_SCORE, true),
-            ];
+                'profile_title' => get_the_title($benchmarks_data[$post_id]['profile_id_used']),
+	            'profile_link' => get_edit_post_link($benchmarks_data[$post_id]['profile_id_used'])
+	        ];
 
-            //?// $benchmarks_data[$post_id]['profile_title'] = get_the_title($benchmarks_data[$post_id]['profile_id_used']);
-            //?// $benchmarks_data[$post_id]['profile_link'] = get_edit_post_link($benchmarks_data[$post_id]['profile_id_used']);
+//            $benchmarks_data[$post_id]['profile_title'] = get_the_title($benchmarks_data[$post_id]['profile_id_used']);
+//            $benchmarks_data[$post_id]['profile_link'] = get_edit_post_link($benchmarks_data[$post_id]['profile_id_used']);
 
             // Basic check/ensure array type for data expected as arrays
-            $benchmarks_data[$post_id]['selected_tests'] = is_array($benchmarks_data[$post_id]['selected_tests']) ? $benchmarks_data[$post_id]['selected_tests'] : [];
-            $benchmarks_data[$post_id]['desired_plugins'] = is_array($benchmarks_data[$post_id]['desired_plugins']) ? $benchmarks_data[$post_id]['desired_plugins'] : [];
-            $benchmarks_data[$post_id]['active_plugins_final'] = is_array($benchmarks_data[$post_id]['active_plugins_final']) ? $benchmarks_data[$post_id]['active_plugins_final'] : [];
-            $benchmarks_data[$post_id]['results'] = is_array($benchmarks_data[$post_id]['results']) ? $benchmarks_data[$post_id]['results'] : [];
-            $benchmarks_data[$post_id]['config'] = is_array($benchmarks_data[$post_id]['config']) ? $benchmarks_data[$post_id]['config'] : [];
-            $benchmarks_data[$post_id]['profile_state_during_run'] = is_array($benchmarks_data[$post_id]['profile_state_during_run']) ? $benchmarks_data[$post_id]['profile_state_during_run'] : [];
+            $benchmarks_data[ $post_id ][ 'selected_tests' ] = is_array($benchmarks_data[$post_id]['selected_tests']) ? $benchmarks_data[$post_id]['selected_tests'] : [];
+            $benchmarks_data[ $post_id ][ 'desired_plugins' ] = is_array($benchmarks_data[$post_id]['desired_plugins']) ? $benchmarks_data[$post_id]['desired_plugins'] : [];
+            $benchmarks_data[ $post_id ][ 'active_plugins_final' ] = is_array($benchmarks_data[$post_id]['active_plugins_final']) ? $benchmarks_data[$post_id]['active_plugins_final'] : [];
+            $benchmarks_data[ $post_id ][ 'results' ] = is_array($benchmarks_data[$post_id]['results']) ? $benchmarks_data[$post_id]['results'] : [];
+            $benchmarks_data[ $post_id ][ 'config' ] = is_array($benchmarks_data[$post_id]['config']) ? $benchmarks_data[$post_id]['config'] : [];
+            $benchmarks_data[ $post_id ][ 'profile_state_during_run' ] = is_array($benchmarks_data[$post_id]['profile_state_during_run']) ? $benchmarks_data[$post_id]['profile_state_during_run'] : [];
         }
 
         if (count($benchmarks_data) < 2) {
-            wp_die(/*...*/);
+            // --- COMPLETED wp_die() CALL ---
+            $error_html = '<p>' . __('Could not load at least two valid benchmarks for comparison.', 'wpbench') . '</p>';
+
+            if (!empty($error_messages)) {
+                $error_html .= '<p>' . __('Specific issues found:', 'wpbench') . '</p><ul style="list-style:disc; margin-left: 20px;">';
+
+                foreach ($error_messages as $err) {
+                    $error_html .= '<li>' . esc_html($err) . '</li>';
+                }
+
+                $error_html .= '</ul>';
+            }
+
+            $error_html .= '<p><a href="' . esc_url(admin_url('edit.php?post_type=' . AdminBenchmark::POST_TYPE)) . '">' . __('Go back to All Benchmarks', 'wpbench') . '</a></p>';
+
+            Logger::log($error_html, 'error');
+
+            wp_die(
+                $error_html, // Message content including specific errors
+                __('Comparison Error - Invalid Data', 'wpbench'), // Title
+                ['response' => 400, 'back_link' => true] // Arguments (Bad Request)
+            );
+            // --- END OF COMPLETED wp_die() CALL ---
         }
 
         // --- Prepare Variables for View ---

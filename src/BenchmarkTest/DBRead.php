@@ -80,6 +80,8 @@ class DBRead implements BaseBenchmarkTest {
             'default_value' => 250,
             'min_value'     => 10,
             'max_value'     => 5000,
+            'target'        => 0.2,  // Target value specific to DB Read test
+            'weight'        => 0.30, // Weight specific to DB Read test
         ];
     }
 }
