@@ -18,11 +18,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class BenchmarkProfileAdmin {
 
-    const POST_TYPE = 'benchmark_profile';
+    const string POST_TYPE = 'benchmark_profile';
 
     // Meta Keys specific to Benchmark Profiles
-    const META_SELECTED_TESTS = '_wpbench_profile_selected_tests';
-    const META_CONFIG_PREFIX = '_wpbench_profile_config_'; // Prefix for config values
+    const string META_SELECTED_TESTS = '_wpbench_profile_selected_tests';
+    const string META_CONFIG_PREFIX = '_wpbench_profile_config_'; // Prefix for config values
 
     public function __construct(
 		private PluginState $pluginState,
@@ -148,7 +148,7 @@ class BenchmarkProfileAdmin {
         // Prepare variables needed by the view
         $available_tests = $this->testRegistry->get_available_tests();
 
-		// @TODO: Refactor into TestRegistry->getSavedSelectedPosts (or maybe in BenchmarkResult ??) / a method, due to the need for an array
+		// @TODO: Refactor into TestRegistry->getSavedSelectedPosts (or maybe in BenchmarkResultPost ??) / a method, due to the need for an array
         $saved_selected_tests = get_post_meta($post->ID, self::META_SELECTED_TESTS, true);
 
 	    // Ensure it is always an array
@@ -182,7 +182,7 @@ class BenchmarkProfileAdmin {
 
 
     /**
-     * Save meta data when the Profile CPT is saved.
+     * Save metadata when the Profile CPT is saved.
      * Hooked to 'save_post_{post_type}'.
      */
     public function save_profile_meta($post_id, WP_Post $post) {
@@ -250,36 +250,30 @@ class BenchmarkProfileAdmin {
             wp_send_json_error('Permission denied.', 403);
         }
 
-        $profile_id = isset($_POST['profile_id']) ? absint($_POST['profile_id']) : 0;
+        $BenchmarkProfileId = isset($_POST['profile_id']) ? absint($_POST['profile_id']) : 0;
+	    $BenchmarkProfilePost = new BenchmarkProfilePost($BenchmarkProfileId);
 
-        if ($profile_id <= 0 || get_post_type($profile_id) !== self::POST_TYPE) {
-            wp_send_json_error('Invalid profile ID.', 400);
-        }
-
-        $profile_post = get_post($profile_id);
-
-        if (!$profile_post || $profile_post->post_status !== 'publish') {
-             wp_send_json_error('Profile not found or not published.', 404);
+	    if ($BenchmarkProfilePost->post->post_status !== 'publish') {
+             wp_send_json_error('BenchmarkProfile not found or not published.', 404);
         }
 
         // Fetch meta data using constants
-        $selected_tests = get_post_meta($profile_id, self::META_SELECTED_TESTS, true);
-        $desired_plugins = $this->pluginState->getDesiredState($profile_id);
+	    $selected_tests = $BenchmarkProfilePost->getSelectedTests();
+	    $desired_plugins = $this->pluginState->getDesiredState($BenchmarkProfileId);
 
         // Get config data using prefix
         $config = [];
         $available_tests = $this->testRegistry->get_available_tests(); // Needed for defaults
 
         foreach ($available_tests as $id => $info) {
-            $meta_key = self::META_CONFIG_PREFIX . $id;
-            $saved_value = get_post_meta($profile_id, $meta_key, true);
+            $saved_value = $BenchmarkProfilePost->getTestInfo($id);
 
             // Return value using 'config_cpu' format, use saved value or default
             $config['config_' . $id] = ($saved_value !== '' && $saved_value !== null) ? absint($saved_value) : ($info['default_value'] ?? 0);
         }
 
         $data = [
-            'name_suggestion' => 'Benchmark run from profile: ' . $profile_post->post_title,
+            'name_suggestion' => 'Benchmark run from profile: ' . $BenchmarkProfilePost->post->post_title,
             'selected_tests' => is_array($selected_tests) ? $selected_tests : [],
             'config' => $config,
             'desired_plugins' => $desired_plugins,

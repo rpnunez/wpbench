@@ -2,6 +2,11 @@
 namespace WPBench\BenchmarkTest;
 
 // Exit if accessed directly
+use WPBench\Helpers\RandomStringTypes;
+use WPBench\Helpers\Safeguard;
+use WPBench\Helpers\Utility;
+use WPBench\Logger;
+
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
@@ -11,11 +16,36 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class CPU implements BaseBenchmarkTest {
 
+	private const PERIODIC_INTERVAL = 1000; // Interval for periodic operations
+
+	private const WORKLOAD_MULTIPLIER = 50;
+
+	private const MAX_CPU_ITERATIONS = 100000;
+
+	private const MAX_EXECUTION_TIME_SECONDS = 30;
+
+	private const MAX_MEMORY_USAGE_MB = 128;
+
+	/**
+	 * Retrieves the singleton instance of the CPU class.
+	 *
+	 * @return CPU|null The singleton instance of the CPU class, or null if an instance is not created.
+	 */
+	public function getInstance(): ?CPU {
+		static $instance = null;
+
+		if ( null === $instance ) {
+			$instance = new self();
+		}
+
+		return $instance;
+	}
+
     /**
      * Get descriptive information about the CPU test.
      * @return array Test details.
      */
-    public function get_info() : array {
+    public function getInfo() : array {
         return [
             'id'            => 'cpu',
             'name'          => __('CPU Test', 'wpbench'),
@@ -25,51 +55,133 @@ class CPU implements BaseBenchmarkTest {
             'default_value' => 100000,
             'min_value'     => 1000,
             'max_value'     => 10000000,
-            'target'        => 0.5,  // Target value specific to CPU test
-            'weight'        => 0.30, // Weight specific to CPU test
-
+            'instance'      => $this->getInstance()
         ];
     }
 
     /**
      * Run the CPU benchmark test.
      *
-     * @param int $value Number of iterations.
+     * @param mixed $value Number of iterations.
+     *
      * @return array Results including 'time' and 'error'.
      */
-    public function run( $value ) : array {
-        $iterations = absint($value);
-        if ($iterations <= 0) {
-            return ['time' => 0, 'error' => 'Invalid iteration count.'];
-        }
+	public function run(mixed $value): array {
+		$totalIterations = absint($value);
 
-        $start = microtime( true );
-        $error = null;
-        $checksum = 0; // To potentially prevent optimizations
+		if ($totalIterations <= 0) {
+			return $this->buildResult(0, 'Invalid iteration count.');
+		}
 
-        try {
-            for ( $i = 0; $i < $iterations; $i++ ) {
-                // Perform some math operations
-                $a = sqrt( ( $i + 1 ) * M_PI ); // Use M_PI constant
-                $b = log( $a + 1 );
-                $c = sin( $b ) * cos( $a );
-                 // Perform some string operations
-                 $str = md5((string)$c . uniqid('', true)); // Add more entropy
-                 $str = sha1($str . $i);
-                 $str = strrev($str);
-                 // Prevent potential "Unused variable" optimization issues
-                 if ($i % 1000 === 0) { // Do something trivial periodically
-                     $checksum += crc32($str);
-                 }
-            }
-        } catch (\Throwable $t) {
-             // Catch potential errors during calculations
-             $error = 'Error during CPU test: ' . $t->getMessage();
-        }
+		$startTime = microtime(true);
+		$error = null;
+		$checksum = 0;
 
-        return [
-            'time' => round( microtime( true ) - $start, 4 ),
-            'error' => $error // Will be null if try block completed without exception
-        ];
-    }
+		try {
+			for ($iteration = 0; $iteration < $totalIterations; $iteration++) {
+				// Run safeguards to ensure we don't break ourselves
+				if ($iteration % 1000 === 0) {
+					Safeguard::checkIfCPULoadReached( sys_getloadavg()[0] );
+					Safeguard::checkIfMaxExecutionTimeReached( $startTime, self::MAX_EXECUTION_TIME_SECONDS );
+					Safeguard::checkIfMaxMemoryReached(memory_get_usage(), self::MAX_MEMORY_USAGE_MB);
+					Safeguard::checkIfMaxIterationsReached( $iteration, self::MAX_CPU_ITERATIONS );
+				}
+
+				$mediumLoadWork = $this->performMediumOperations($iteration);
+				$intensiveLoadWork = $this->performIntensiveOperations($iteration);
+
+				$generatedString = Utility::get_random_string(200, RandomStringTypes::Alphanumeric);
+
+				if ($this->isPeriodic($iteration)) {
+					$checksum = $this->updateChecksum($checksum, $generatedString);
+				}
+			}
+		} catch (\Throwable $exception) {
+			$error = "Exception ". $exception->getLine() ." caught during CPU test: " . $exception->getMessage();
+
+			Logger::log($error, 'info');
+		}
+
+		return $this->buildResult(
+			round(microtime(true) - $startTime, 4),
+			$error
+		);
+	}
+
+	private function buildResult(float $time, ?string $error = null): array {
+		return [
+			'time' => $time,
+			'error' => $error,
+		];
+	}
+
+	private function performMediumOperations(int $iteration): float {
+		$valueA = sqrt(($iteration + 1) * M_PI);
+		$valueB = log($valueA + 1);
+		return sin($valueB) * cos($valueA);
+	}
+
+	private function performIntensiveOperations(int $iteration): void {
+		$workload = $iteration * self::WORKLOAD_MULTIPLIER;
+		$sum = 0;
+
+		for ($i = 1; $i <= $workload; $i++) {
+			$value = pow($i, 3) / sqrt($i + 1) * sin($i) * cos($i);
+			$sum += log(abs($value) + 1);
+		}
+
+		for ($i = 1; $i <= $workload; $i++) {
+			for ($j = 1; $j <= 50; $j++) {
+				$temp = ($i * $j) / ($j + 1);
+				$sum += tanh($temp);
+			}
+		}
+	}
+
+	private function isPeriodic(int $iteration): bool {
+		return $iteration % self::PERIODIC_INTERVAL === 0;
+	}
+
+	private function updateChecksum(int $checksum, string $value): int {
+		return $checksum + crc32($value);
+	}
+
+	public function run_old( mixed $value ) : array {
+		$totalIterations = absint($value);
+
+		if ( $totalIterations <= 0 ) {
+			return $this->buildResult(0, 'Invalid iteration count.');
+
+		}
+
+		$startTime = microtime(true);
+		$error = null;
+		$checksum = 0;
+
+		try {
+			for ( $iteration = 0; $iteration < $totalIterations; $iteration++ ) {
+				$result = 0;
+				$result += $this->performMediumOperations($iteration);
+
+				$this->performIntensiveOperations($iteration);
+
+				$generatedString = Utility::get_random_string( 200, RandomStringTypes::Alphanumeric);
+
+				if ( $this->isPeriodic($iteration) ) {
+					$checksum = $this->updateChecksum($checksum, $generatedString);
+				}
+			}
+		} catch (\Throwable $exception) {
+			Logger::log("Error during CPU test: ". $exception->getMessage(), 'error');
+		}
+
+		return [
+			'time' => round(microtime(true) - $startTime, 4),
+			'error' => $error,
+		];
+	}
+
+	public function checkSystemHealth() {
+		// TODO: Implement checkSystemHealth() method.
+	}
 }

@@ -5,13 +5,13 @@
  * Expects the following variables:
  * @var array $config            Benchmark configuration used.
  * @var array $results           Benchmark results array (includes 'errors' key if any).
- * @var array $selected_tests    Array of test IDs selected for the run.
- * @var array $active_plugins_final Array of {name, version, file} for plugins active AFTER restoration attempt.
- * @var array $desired_plugins   Array of plugin file paths user wanted active.
- * @var array|null $pre_benchmark_state Array containing ['active_site', 'active_network'] before the run.
- * @var array $all_possible_tests Array of info for all available tests.
- * @var array $all_plugins_info  Array of all plugin data from get_plugins().
- * @var int|null $profile_id_used ID of the profile used for this run, or null.
+ * @var array $selectedTests    Array of test IDs selected for the run.
+ * @var array $activePluginsFinal Array of {name, version, file} for plugins active AFTER restoration attempt.
+ * @var array $desiredPlugins   Array of plugin file paths user wanted active.
+ * @var array|null $preBenchmarkState Array containing ['active_site', 'active_network'] before the run.
+ * @var array $allPossibleTests Array of info for all available tests.
+ * @var array $allPluginsInfo  Array of all plugin data from get_plugins().
+ * @var int|null $profileIdUsed ID of the profile used for this run, or null.
  * @var \WP_Post $post             The current benchmark_result post object.
  */
 
@@ -21,19 +21,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Decode pre-benchmark state parts safely
-$pre_site_active = $pre_benchmark_state['active_site'] ?? [];
-$pre_network_active = $pre_benchmark_state['active_network'] ?? [];
+$pre_site_active = $preBenchmarkState['active_site'] ?? [];
+$pre_network_active = $preBenchmarkState['active_network'] ?? [];
 $pre_all_active = array_unique(array_merge($pre_site_active, $pre_network_active));
 
-// Ensure other arrays are arrays
+// Ensure other variables are present and an excpected type
 $config = is_array($config) ? $config : [];
 $results = is_array($results) ? $results : [];
-$selected_tests = is_array($selected_tests) ? $selected_tests : [];
-$active_plugins_final = is_array($active_plugins_final) ? $active_plugins_final : [];
-$desired_plugins = is_array($desired_plugins) ? $desired_plugins : [];
+$selectedTests = is_array($selectedTests) ? $selectedTests : [];
+$activePluginsFinal = is_array($activePluginsFinal) ? $activePluginsFinal : [];
+$desiredPlugins = is_array($desiredPlugins) ? $desiredPlugins : [];
+$profileStateDuringRun = is_array($profileStateDuringRun) ? $profileStateDuringRun : [];
+$allPossibleTests = is_array($allPossibleTests) ? $allPossibleTests : [];
+$allPluginsInfo = is_array($allPluginsInfo) ? $allPluginsInfo : [];
+$benchmarkResultPost = is_object($benchmarkResultPost) ? $benchmarkResultPost : null;
+$benchmarkProfilePost = is_object($benchmarkProfilePost) ? $benchmarkProfilePost : null;
 
-
-if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
+if ( empty($config) && empty($results) && empty($preBenchmarkState)) {
      echo '<p>' . esc_html__( 'Benchmark data not found for this result.', 'wpbench' ) . '</p>';
      return;
 }
@@ -61,10 +65,10 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
     </div>
 <?php endif; ?>
 
-<?php if ($profile_id_used): ?>
+<?php if ($profileIdUsed): ?>
      <?php
-     $profile_link = get_edit_post_link(absint($profile_id_used));
-     $profile_title = get_the_title(absint($profile_id_used));
+     $profile_link = get_edit_post_link(absint($profileIdUsed));
+     $profile_title = get_the_title(absint($profileIdUsed));
      ?>
      <p><em><?php echo esc_html__('Settings loaded from profile:', 'wpbench'); ?>
      <?php if ($profile_link && $profile_title): ?>
@@ -72,16 +76,16 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
      <?php elseif ($profile_title): ?>
          <?php echo esc_html($profile_title) . ' ' . esc_html__('(Profile Link Invalid?)','wpbench'); ?>
      <?php else: ?>
-         <?php echo '#' . esc_html($profile_id_used) . ' ' . esc_html__('(Profile Deleted?)','wpbench'); ?>
+         <?php echo '#' . esc_html($profileIdUsed) . ' ' . esc_html__('(Profile Deleted?)','wpbench'); ?>
      <?php endif; ?>
      </em></p>
  <?php endif; ?>
 
 <h3><?php echo esc_html__( 'Benchmark Configuration Used', 'wpbench' ); ?></h3>
-<?php if (!empty($config) && !empty($all_possible_tests)): ?>
+<?php if (!empty($config) && !empty($allPossibleTests)): ?>
     <table class="form-table widefat striped">
         <tbody>
-        <?php foreach ($all_possible_tests as $id => $info): ?>
+        <?php foreach ($allPossibleTests as $id => $info): ?>
             <?php
             $config_key = 'config_' . $id;
             $value_display = $config[$config_key] ?? __('N/A', 'wpbench');
@@ -139,10 +143,10 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
                 </td>
             </tr>
             <tr></tr>
-            <?php foreach ($all_possible_tests as $id => $info): ?>
+            <?php foreach ($allPossibleTests as $id => $info): ?>
                 <tr>
                     <th scope="row"><?php echo esc_html($info['name'] ?? $id); ?>:</th>
-                    <?php if (in_array($id, $selected_tests) && isset($results[$id])): ?>
+                    <?php if (in_array($id, $selectedTests) && isset($results[$id])): ?>
                     <?php
                         // Test was selected and has results data
                         $result_data = $results[$id];
@@ -182,7 +186,7 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
                         }
                         ?>
                         <td><?php echo $display_value; ?><?php if($error_msg) echo ' <span style="color:red;" title="'.esc_attr($error_msg).'">(!)</span>'; ?></td>
-                    <?php elseif (in_array($id, $selected_tests)): ?>
+                    <?php elseif (in_array($id, $selectedTests)): ?>
                         <td><span style="color:orange;"><?php echo esc_html__('Selected but no result data found.', 'wpbench'); ?></span></td>
                     <?php else: ?>
                         <td><em><?php echo esc_html__('Not run', 'wpbench'); ?></em></td>
@@ -215,8 +219,8 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
                 <ul style="list-style: disc; margin-left: 20px;">
                 <?php foreach ($pre_all_active as $plugin_file): ?>
                     <?php
-                    $name = $all_plugins_info[$plugin_file]['Name'] ?? $plugin_file;
-                    $version = $all_plugins_info[$plugin_file]['Version'] ?? 'N/A';
+                    $name = $allPluginsInfo[$plugin_file]['Name'] ?? $plugin_file;
+                    $version = $allPluginsInfo[$plugin_file]['Version'] ?? 'N/A';
                     ?>
                     <li><?php echo esc_html($name) . ' (' . esc_html($version) . ')'; ?></li>
                 <?php endforeach; ?>
@@ -227,12 +231,12 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
         <tr>
             <th scope="row"><?php echo esc_html__('Desired State (for test)', 'wpbench'); ?><p class="description"><?php echo esc_html__('Plugins selected by user for run.', 'wpbench'); ?></p></th>
             <td>
-            <?php if (!empty($desired_plugins)): ?>
+            <?php if (!empty($desiredPlugins)): ?>
                 <ul style="list-style: disc; margin-left: 20px;">
-                <?php foreach ($desired_plugins as $plugin_file): ?>
+                <?php foreach ($desiredPlugins as $plugin_file): ?>
                     <?php
-                     $name = $all_plugins_info[$plugin_file]['Name'] ?? $plugin_file;
-                     $version = $all_plugins_info[$plugin_file]['Version'] ?? 'N/A';
+                     $name = $allPluginsInfo[$plugin_file]['Name'] ?? $plugin_file;
+                     $version = $allPluginsInfo[$plugin_file]['Version'] ?? 'N/A';
                      ?>
                     <li><?php echo esc_html($name) . ' (' . esc_html($version) . ')'; ?></li>
                 <?php endforeach; ?>
@@ -243,9 +247,9 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
          <tr>
             <th scope="row"><?php echo esc_html__('Final State (After Run)', 'wpbench'); ?><p class="description"><?php echo esc_html__('Plugins active AFTER restoration was attempted.', 'wpbench'); ?></p></th>
             <td>
-            <?php if (!empty($active_plugins_final)): ?>
+            <?php if (!empty($activePluginsFinal)): ?>
                 <ul style="list-style: disc; margin-left: 20px;">
-                <?php foreach ($active_plugins_final as $plugin): // This is array of {name, version, file} ?>
+                <?php foreach ($activePluginsFinal as $plugin): // This is array of {name, version, file} ?>
                     <li><?php echo esc_html($plugin['name'] ?? 'N/A') . ' (' . esc_html($plugin['version'] ?? 'N/A') . ')'; ?></li>
                 <?php endforeach; ?>
                 </ul>
@@ -259,14 +263,14 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
 // --- Display Profile State During Run --- 
 ?>
 
-<?php if ($profile_id_used && is_array($profile_state_during_run)): ?>
+<?php if ( $profileIdUsed && is_array($profileStateDuringRun)): ?>
     <h3 style="margin-top: 20px;"><?php echo esc_html__( 'Profile State Used During Benchmark', 'wpbench' ); ?></h3>
     <p class="description"><?php echo esc_html__('This was the configuration loaded from the profile when the benchmark started.', 'wpbench'); ?></p>
 
     <h4><?php echo esc_html__('Selected Tests (Profile):', 'wpbench'); ?></h4>
-    <?php if (!empty($profile_state_during_run['selected_tests']) && is_array($profile_state_during_run['selected_tests'])): ?>
+    <?php if ( !empty($profileStateDuringRun['selected_tests']) && is_array($profileStateDuringRun['selected_tests'])): ?>
         <ul style="list-style: disc; margin-left: 20px;">
-            <?php foreach ($profile_state_during_run['selected_tests'] as $test_id): ?>
+            <?php foreach ($profileStateDuringRun['selected_tests'] as $test_id): ?>
                 <li><?php echo esc_html($test_id); ?></li>
             <?php endforeach; ?>
         </ul>
@@ -275,10 +279,10 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
     <?php endif; ?>
 
     <h4><?php echo esc_html__('Configuration (Profile):', 'wpbench'); ?></h4>
-    <?php if (!empty($profile_state_during_run['config']) && is_array($profile_state_during_run['config'])): ?>
+    <?php if ( !empty($profileStateDuringRun['config']) && is_array($profileStateDuringRun['config'])): ?>
         <table class="widefat striped" style="width: auto; max-width: 400px; margin-top: 5px;">
             <tbody>
-            <?php foreach($profile_state_during_run['config'] as $key => $val): ?>
+            <?php foreach($profileStateDuringRun['config'] as $key => $val): ?>
                 <?php
                 // Prepare display values within PHP tags
                 $display_key = ucwords(str_replace(['config_', '_'], ['', ' '], $key));
@@ -296,12 +300,12 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
     <?php endif; ?>
 
     <h4><?php echo esc_html__('Desired Plugins (Profile):', 'wpbench'); ?></h4>
-    <?php if (!empty($profile_state_during_run['desired_plugins']) && is_array($profile_state_during_run['desired_plugins'])): ?>
+    <?php if ( !empty($profileStateDuringRun['desired_plugins']) && is_array($profileStateDuringRun['desired_plugins'])): ?>
         <ul style="list-style: disc; margin-left: 20px;">
-        <?php foreach($profile_state_during_run['desired_plugins'] as $plugin_file): ?>
+        <?php foreach($profileStateDuringRun['desired_plugins'] as $plugin_file): ?>
             <?php
             // Get plugin name safely
-            $name = $all_plugins_info[$plugin_file]['Name'] ?? $plugin_file;
+            $name = $allPluginsInfo[$plugin_file]['Name'] ?? $plugin_file;
             ?>
             <li><?php echo esc_html($name); ?></li>
         <?php endforeach; ?>
@@ -311,7 +315,7 @@ if ( empty($config) && empty($results) && empty($pre_benchmark_state)) {
     <?php endif; ?>
 
 <?php // Handle case where profile ID was used, but data wasn't saved correctly ?>
-<?php elseif ($profile_id_used): ?>
+<?php elseif ($profileIdUsed): ?>
     <p><em><?php echo esc_html__('Profile state data during run is missing.', 'wpbench'); ?></em></p>
 <?php endif; ?>
 

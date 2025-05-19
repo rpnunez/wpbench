@@ -45,6 +45,8 @@
 
 // Exit if accessed directly
 use WPBench\Logger;
+use WPBench\Plugin;
+use WPBench\WPBenchSettings;
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
@@ -64,8 +66,20 @@ if ( ! defined( 'WPBENCH_URL' ) ) {
     define( 'WPBENCH_URL', plugin_dir_url( __FILE__ ) );
 }
 
+if ( ! defined( 'WPBENCH_NAME' ) ) {
+	define( 'WPBENCH_NAME', 'WPBench' );
+}
+
 if ( ! defined( 'WPBENCH_BASE_NAMESPACE' ) ) {
     define( 'WPBENCH_BASE_NAMESPACE', 'WPBench\\' );
+}
+
+if ( ! defined( 'WPBENCH_CACHE_DAY' ) ) {
+    define( 'WPBENCH_CACHE_DAY', 24 * 60 * 60 );
+}
+
+if ( ! defined( 'WPBENCH_CACHE_HOUR' ) ) {
+	define( 'WPBENCH_CACHE_HOUR', 60 * 60 );
 }
 
 // --- Register Autoloader ---
@@ -75,11 +89,14 @@ spl_autoload_register( function( $class ) {
     $prefix = WPBENCH_BASE_NAMESPACE;
     $base_dir = WPBENCH_PATH . 'src/';
     $len = strlen( $prefix );
+
     if ( strncmp( $prefix, $class, $len ) !== 0 ) {
         return; // Not our namespace
     }
+
     $relative_class = substr( $class, $len );
     $file = $base_dir . str_replace( '\\', '/', $relative_class ) . '.php';
+
     if ( file_exists( $file ) ) {
         require $file;
     }
@@ -95,7 +112,7 @@ spl_autoload_register( function( $class ) {
 function wpbench_run_plugin() {
     // Ensure the main class exists via autoloader before calling instance()
     if ( class_exists( WPBENCH_BASE_NAMESPACE . 'Plugin' ) ) {
-        \WPBench\Plugin::instance(); // Get the singleton instance
+        Plugin::instance(); // Get the singleton instance
     } else {
         // Log an error or add an admin notice if the class failed to load
         add_action( 'admin_notices', function() {
@@ -112,7 +129,9 @@ function wpbench_run_plugin() {
 add_action( 'plugins_loaded', 'wpbench_run_plugin' );
 
 // --- Register Activation / Deactivation Hooks ---
-// These hooks MUST point to static methods or global functions defined BEFORE the hook is registered. They
+// These hooks MUST point to static methods or global functions defined BEFORE the hook is registered.
+// They run on activation/deactivation even before 'plugins_loaded'. We point them to static methods
+// in our Plugin class.
 register_activation_hook( __FILE__, [ WPBENCH_BASE_NAMESPACE . 'Plugin', 'activatePlugin' ] );
 register_deactivation_hook( __FILE__, [ WPBENCH_BASE_NAMESPACE . 'Plugin', 'deactivatePlugin' ] );
 
@@ -124,7 +143,7 @@ register_deactivation_hook( __FILE__, [ WPBENCH_BASE_NAMESPACE . 'Plugin', 'deac
  * @param mixed  $default     Optional. A default value to return if the setting is not found.
  * @return mixed The value of the setting or the default.
  */
-function wpbench_option( string $setting_key, $default = null ) {
+function wpbench_option( string $setting_key, $default = null ): mixed {
 	// Ensure the Settings class is loaded (should be by autoloader)
 	if (!class_exists(WPBENCH_BASE_NAMESPACE . 'WPBenchSettings')) {
 		// Log an error if class isn't available
@@ -136,8 +155,8 @@ function wpbench_option( string $setting_key, $default = null ) {
 	static $options = null; // Cache options within a single request
 
 	if ($options === null) {
-		$saved_options = get_option( \WPBench\WPBenchSettings::OPTION_NAME, [] );
-		$defaults = \WPBench\WPBenchSettings::get_defaults(); // Use static method
+		$saved_options = get_option( WPBenchSettings::OPTION_NAME, [] );
+		$defaults = WPBenchSettings::get_defaults(); // Use static method
 
 		// Ensure saved options are an array before parsing
 		$saved_options = is_array($saved_options) ? $saved_options : [];

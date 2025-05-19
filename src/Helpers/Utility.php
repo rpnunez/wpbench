@@ -1,6 +1,6 @@
 <?php
 
-namespace src\Helpers;
+namespace WPBench\Helpers;
 
 class Utility {
 	/**
@@ -19,6 +19,15 @@ class Utility {
 		$filtered_ids = array_filter($ids_array); // Remove invalid IDs (e.g., 0).
 
 		return array_unique($filtered_ids);
+	}
+
+	public static function get_random_string($length, RandomStringTypes $type = RandomStringTypes::Alphanumeric) {
+		// Ensure $type is a valid item in the RandomStringTypeEnum
+		$characters = str_shuffle($type->value);
+		$numCharacters = strlen($characters);
+
+		return substr( str_shuffle( str_repeat( $characters, $length ) ), 0, $length );
+
 	}
 
 }

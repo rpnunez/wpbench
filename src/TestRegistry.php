@@ -50,10 +50,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 class TestRegistry {
 
     /** @var array|null Cached list of available test info arrays. */
-    private $available_tests = null;
+    private array|null $available_tests = null;
 
     /** @var array Cached instances of test classes. */
     private $instances = [];
+
+	public function __construct() {
+		$this->available_tests = null;
+	}
 
 	/**
 	 * Scans the BenchmarkTest directory and returns info for available tests.
@@ -67,19 +71,23 @@ class TestRegistry {
 		}
 
 		$this->available_tests = []; // Initialize as empty array
+
+		// Directory where BenchmarkTest's reside
 		$test_dir = WPBENCH_PATH . 'src/BenchmarkTest/';
 
+		// Check if directory exists
 		if (!is_dir($test_dir)) {
-			trigger_error("WPBench: BenchmarkTest directory not found at $test_dir", E_USER_WARNING);
+			Logger::log("BenchmarkTest directory not found at $test_dir", E_USER_WARNING, __CLASS__, __METHOD__);
 
 			return $this->available_tests;
 		}
 
+		// Get all files in test directory
 		$potential_test_files = glob( $test_dir . '*.php' );
 
 		if ( empty($potential_test_files) ) {
 			// This isn't necessarily an error, might just be no tests defined yet
-			Logger::log("WPBench: No PHP files found in BenchmarkTest directory $test_dir", E_USER_WARNING);
+			Logger::log("No PHP files found in BenchmarkTest directory $test_dir", E_USER_WARNING, __CLASS__, __METHOD__);
 
 			return $this->available_tests;
 		}
@@ -93,6 +101,7 @@ class TestRegistry {
 				continue; // Skip to the next file
 			}
 
+			// Get the FQN of the class
 			$class_name = WPBENCH_BASE_NAMESPACE . 'BenchmarkTest\\' . $basename;
 
 			// Check if class exists *before* trying reflection etc. Relies on autoloader.
@@ -104,46 +113,35 @@ class TestRegistry {
 					if ( $reflection->implementsInterface( BaseBenchmarkTest::class ) && !$reflection->isAbstract() ) {
 						// Instantiate ONLY to get info - avoids running constructor logic needlessly here
 						// Note: newInstanceWithoutConstructor is safer if constructors have side effects
-						// But if get_info() relies on constructor setup, need newInstance()
-						// Let's assume get_info is safe without full construction for now.
+						// But if getInfo() relies on constructor setup, need newInstance()
+						// Let's assume getInfo is safe without full construction for now.
 						//$test_instance_for_info = $reflection->newInstanceWithoutConstructor();
 						$test_instance = $reflection->newInstance(); // Create an instance
 
-						if (method_exists($test_instance, 'get_info')) {
-							$info = $test_instance->get_info();
+						$info = $test_instance->getInfo();
+						$info['instance'] = $test_instance;
 
-							// Include test instance in the available test info
-							if (isset($info['id']) && is_string($info['id'])) {
-								$info['instance'] = $test_instance;
-								$info['class_name'] = $class_name;
+						//$info['instance'] = $test_instance->getInstance();
 
-								$this->available_tests[$info['id']] = $info;
-							} else {
-								Logger::log("TestRegistry: Test class $class_name get_info() did not return a valid string 'id'. Skipping.", E_USER_WARNING);
-							}
-						} else {
-							Logger::log("TestRegistry: Test class $class_name does not implement get_info() method. Skipping.", E_USER_WARNING);
-						}
-					} else {
-						Logger::log("TestRegistry: Test class $class_name does not implement BaseBenchmarkTest interface or is abstract. Skipping.", E_USER_WARNING);
+						$this->available_tests[$info['id']] = $info;
 					}
 				} catch (\ReflectionException $e) {
-					Logger::log("WPBench: Reflection error for $class_name - " . $e->getMessage(), E_USER_WARNING);
-				} catch (\Throwable $e) { // Catch potential errors during instantiation or get_info() call (Throwable for PHP 7+)
-					Logger::log("TestRegistry: Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING);
+					Logger::log("Reflection error for $class_name - " . $e->getMessage(), E_USER_WARNING, __CLASS__, __METHOD__);
+				} catch (\Throwable $e) { // Catch potential errors during instantiation or getInfo() call (Throwable for PHP 7+)
+					Logger::log("Error processing test class $class_name for info: " . $e->getMessage(), E_USER_WARNING, __CLASS__, __METHOD__);
 				}
 			} else {
 				// This error now specifically means the autoloader found the file but couldn't load the expected class.
 				// Could be namespace typo in the file, or the file IS index.php / BaseBenchmarkTest.php which autoloader included but class_exists failed.
 				// Since we added specific checks for index/BaseBenchmarkTest, this warning is less likely now for those cases.
-				Logger::log("TestRegistry: Expected class $class_name not found after including/autoloading file $file. Check namespace and class definition.", E_USER_WARNING);
+				Logger::log("Expected class $class_name not found after including/autoloading file $file. Check namespace and class definition.", E_USER_WARNING, __CLASS__, __METHOD__);
 			}
 		}
 
 		// Ensure a consistent order (optional, based on ID)
 		ksort($this->available_tests);
 
-		Logger::log("Available tests: " . print_r($this->available_tests, true));
+		Logger::log("Available tests: " . print_r($this->available_tests, true), __CLASS__, __METHOD__);
 
 		return $this->available_tests;
 	}

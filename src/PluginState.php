@@ -102,9 +102,7 @@ class PluginState {
      * @return string[] Array of desired plugin file paths.
      */
     public function getDesiredState(int $postId) : array {
-        $desired = get_post_meta($postId, self::DESIRED_PLUGINS_META_KEY, true);
-
-        return is_array($desired) ? $desired : [];
+        return get_post_meta($postId, self::DESIRED_PLUGINS_META_KEY, true) ?: [];
     }
 
 

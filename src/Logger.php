@@ -1,6 +1,6 @@
 <?php
-
 namespace WPBench;
+
 class Logger {
 	private static array $levels = [
 		'debug',
@@ -13,19 +13,17 @@ class Logger {
 		'emergency'
 	];
 
-	public static function log( $message, $level = 'debug' ): void {
+	public static function log( $message, $level = 'debug', ...$args ): void {
+		$line = "[". WPBENCH_NAME ." - ". time() ." - Class: ". $args[0] .", Method: ". $args[1]. " | ". $level ."] ". $message;
+
 		// Attempt to write to Query Monitor log
 		if ($level && isSet(self::$levels[$level])) {
-			do_action( 'qm/'. $level, $message );
+			do_action( 'qm/'. $level, $line );
 		}
 
 		// Write to WordPress debug log
-		if (
-			defined( 'WP_DEBUG' ) && WP_DEBUG &&
-			defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG
-		) {
-			$prefix = "[WPBench][$level]: ";
-			error_log( $prefix . $message );
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG == true ) {
+			error_log( $line );
 		}
 	}
 }
