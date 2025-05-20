@@ -6,6 +6,8 @@ use WPBench\Helpers\RandomStringTypes;
 use WPBench\Helpers\Safeguard;
 use WPBench\Helpers\Utility;
 use WPBench\Logger;
+use WPBench\Guards\ResourceGuard;
+use WPBench\Exceptions\MaxIterationsReached;
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
@@ -16,15 +18,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class CPU implements BaseBenchmarkTest {
 
-	private const PERIODIC_INTERVAL = 1000; // Interval for periodic operations
+	public const string BENCHMARK_NAME = 'CPU';
 
-	private const WORKLOAD_MULTIPLIER = 50;
+	private const int PERIODIC_INTERVAL = 1000; // Interval for periodic operations
 
-	private const MAX_CPU_ITERATIONS = 100000;
+	private const int WORKLOAD_MULTIPLIER = 50;
 
-	private const MAX_EXECUTION_TIME_SECONDS = 30;
+	private const int MAX_CPU_ITERATIONS = 100000;
 
-	private const MAX_MEMORY_USAGE_MB = 128;
+	private const int MAX_EXECUTION_TIME_SECONDS = 30;
+
+	private const int MAX_MEMORY_USAGE_MB = 128;
 
 	/**
 	 * Retrieves the singleton instance of the CPU class.
@@ -81,25 +85,33 @@ class CPU implements BaseBenchmarkTest {
 			for ($iteration = 0; $iteration < $totalIterations; $iteration++) {
 				// Run safeguards to ensure we don't break ourselves
 				if ($iteration % 1000 === 0) {
-					Safeguard::checkIfCPULoadReached( sys_getloadavg()[0] );
-					Safeguard::checkIfMaxExecutionTimeReached( $startTime, self::MAX_EXECUTION_TIME_SECONDS );
-					Safeguard::checkIfMaxMemoryReached(memory_get_usage(), self::MAX_MEMORY_USAGE_MB);
-					Safeguard::checkIfMaxIterationsReached( $iteration, self::MAX_CPU_ITERATIONS );
+					ResourceGuard::checkIfMaxIterationsReached($iteration);
+
+					//Safeguard::checkIfCPULoadReached( sys_getloadavg()[0] );
+					//Safeguard::checkIfMaxExecutionTimeReached( $startTime, self::MAX_EXECUTION_TIME_SECONDS );
+					//Safeguard::checkIfMaxMemoryReached(memory_get_usage(), self::MAX_MEMORY_USAGE_MB);
+					//Safeguard::checkIfMaxIterationsReached( $iteration, self::MAX_CPU_ITERATIONS );
 				}
 
 				$mediumLoadWork = $this->performMediumOperations($iteration);
 				$intensiveLoadWork = $this->performIntensiveOperations($iteration);
 
-				$generatedString = Utility::get_random_string(200, RandomStringTypes::Alphanumeric);
+				$generatedString = Utility::get_random_string(200);
 
 				if ($this->isPeriodic($iteration)) {
 					$checksum = $this->updateChecksum($checksum, $generatedString);
 				}
 			}
-		} catch (\Throwable $exception) {
-			$error = "Exception ". $exception->getLine() ." caught during CPU test: " . $exception->getMessage();
+		} catch (\WPBench\Exceptions\MaxIterationsReached $e) { // Or your namespaced Exception
+			$error = "Max iterations exceeded during ". self::BENCHMARK_NAME .': ' . $e->getMessage();
+		} catch (\Exception $exception) {
+			$error = "Exception ". $exception->getLine() ." caught during ". self::BENCHMARK_NAME .": ". $exception->getMessage();
+		} finally {
+			if ($error) {
+				Logger::log($error, 'error');
 
-			Logger::log($error, 'info');
+				return $this->buildResult(0,$error);
+			}
 		}
 
 		return $this->buildResult(

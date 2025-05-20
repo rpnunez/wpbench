@@ -2,7 +2,9 @@
 namespace WPBench;
 
 use WP_Error;
+use WPBench\Guards\PluginGuard;
 use WPBench\PluginState;
+use WPBench\Helpers\Safeguard;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -19,33 +21,56 @@ class PluginManager {
      * Attempts to change the plugin state based on calculated differences.
      * !! THIS IS A HIGH-RISK OPERATION !!
      *
-     * @param string[] $to_activate Array of plugin file paths to activate.
-     * @param string[] $to_deactivate Array of plugin file paths to deactivate.
+     * @param string[] $toActivate Array of plugin file paths to activate.
+     * @param string[] $toDeactivate Array of plugin file paths to deactivate.
      *
      * @return array{success: bool, errors: array, final_state: array} Result array.
      */
-    public function executeChange( array $to_activate, array $to_deactivate) : array {
+    public function executeChange( array $toActivate, array $toDeactivate) : array {
         $errors = [];
         $success = true;
 
 	    // --- WPBench Self-Protection: Ensure WPBench is not in the lists ---
-	    $wpbench_plugin_basename = plugin_basename(WPBENCH_PATH . 'wpbench.php');
+//	    $wpbench_plugin_basename = plugin_basename(WPBENCH_PATH . 'wpbench.php');
+//
+//	    $to_activate_orig_count = count( $to_activate);
+//	    $to_deactivate_orig_count = count($to_deactivate);
+//
+//	    $to_activate   = array_values(array_diff( $to_activate, [$wpbench_plugin_basename]));
+//	    $to_deactivate = array_values(array_diff($to_deactivate, [$wpbench_plugin_basename]));
+//
+//	    if (
+//			count( $to_activate) !== $to_activate_orig_count ||
+//			count($to_deactivate) !== $to_deactivate_orig_count
+//	    ) {
+//		    $errors['plugin_manager_safeguard'] = __('WPBench plugin itself was filtered out from activation/deactivation targets.', 'wpbench');
+//
+//		    Logger::log('PluginManager filtered out WPBench from activation/deactivation targets. This indicates a potential logic flow issue upstream.', 'security');
+//	    }
+//	    // --- End WPBench Self-Protection ---
 
-	    $to_activate_orig_count = count( $to_activate);
-	    $to_deactivate_orig_count = count($to_deactivate);
+	    // --- WPBench Self-Protection ---
+//	    $pluginBaseName = plugin_basename(WPBENCH_PATH . 'wpbench.php');
+//
+//	    [$to_activate, $to_deactivate] = Safeguard::ensurePluginSelfProtection(
+//			$to_activate,
+//			$to_deactivate,
+//			$pluginBaseName
+//	    );
+		// --- End WPBench Self-Protection ---
 
-	    $to_activate   = array_values(array_diff( $to_activate, [$wpbench_plugin_basename]));
-	    $to_deactivate = array_values(array_diff($to_deactivate, [$wpbench_plugin_basename]));
+	    // --- Defense-in-depth: Ensure WPBench is not in the lists using PluginGuard static methods ---
+	    $original_to_activate_count = count($toActivate);
+	    $original_to_deactivate_count = count($toDeactivate);
 
-	    if (
-			count( $to_activate) !== $to_activate_orig_count ||
-			count($to_deactivate) !== $to_deactivate_orig_count
-	    ) {
-		    $errors['plugin_manager_safeguard'] = __('WPBench plugin itself was filtered out from activation/deactivation targets.', 'wpbench');
+	    $toActivate = PluginGuard::filterWPBenchFromActivationList($toActivate);   // <-- UPDATED static call
+	    $toDeactivate = PluginGuard::filterWPBenchFromDeactivationList($toDeactivate); // <-- UPDATED static call
 
-		    Logger::log('PluginManager filtered out WPBench from activation/deactivation targets. This indicates a potential logic flow issue upstream.', 'security');
+	    if (count($toActivate) !== $original_to_activate_count || count($toDeactivate) !== $original_to_deactivate_count) {
+		    $errors['plugin_manager_safeguard'] = __('WPBench plugin itself was filtered out by PluginManager from targets.', 'wpbench');
+		    error_log('WPBench SECURITY: PluginManager safeguard triggered. WPBench was found in activation/deactivation targets. This indicates an upstream logic error in PluginState::calculateStateChanges.');
 	    }
-	    // --- End WPBench Self-Protection ---
+	    // --- End Safeguard ---
 
         // Include WordPress's plugin functions if not already loaded
         if (!function_exists('deactivate_plugins')) {

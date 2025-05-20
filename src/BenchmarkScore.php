@@ -11,22 +11,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class BenchmarkScore {
 
-    // --- Score Calculation Constants (EXAMPLES - ADJUST THESE!) ---
+    // --- Score Calculation Constants ---
     public const float TARGET_CPU_S_PER_M_ITER = 0.5;
     public const float TARGET_FILE_IO_S_PER_1K_OPS = 0.1;
     public const float TARGET_DB_READ_S_PER_1K_QUERIES = 0.2;
     public const float TARGET_DB_WRITE_S_PER_1K_OPS = 0.3;
 	public const float TARGET_MEMORY_MB = 100;
 
-    // @TODO: Memory is excluded from score for now.
-
     // --- Weights (Should ideally add up to 1.0) ---
     public const float WEIGHT_CPU = 0.30;
     public const float WEIGHT_FILE_IO = 0.10;
-    public const float WEIGHT_DB_READ = 0.30;
-    public const float WEIGHT_DB_WRITE = 0.30;
-
-	public const float WEIGHT_MEMORY = 0.30;
+    public const float WEIGHT_DB_READ = 0.20;
+    public const float WEIGHT_DB_WRITE = 0.20;
+	public const float WEIGHT_MEMORY = 0.20;
 
 	/**
 	 * Calculates an overall benchmark score.
@@ -60,11 +57,12 @@ class BenchmarkScore {
 			$sub_score = 0;
 
 			// Handle each test type based on test IDs
+			// @TODO: Refactor this, as right now, we are breaking the dynamic intention of BenchmarkTest's. Each BenchmarkTest should have a calculateScore() method, used here.
 			switch ($test_id) {
 				case 'cpu':
 					$iterations = (int) ($config['config_cpu'] ?? 0);
 
-					[$target_time, $weight] = \src\BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
+					[$target_time, $weight] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
 						self::TARGET_CPU_S_PER_M_ITER,
 						$iterations,
 						self::WEIGHT_CPU,
@@ -75,7 +73,7 @@ class BenchmarkScore {
 				case 'file_io':
 					$ops = (int) ($config['config_file_io'] ?? 0) * 2;
 
-					[$target_time, $weight] = \src\BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
+					[$target_time, $weight] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
 					self::TARGET_FILE_IO_S_PER_1K_OPS,
 						$ops,
 					self::WEIGHT_FILE_IO
@@ -87,7 +85,7 @@ class BenchmarkScore {
 					$queries_executed = $results[$test_id]['queries_executed'] ?? $queries * 2;
 
 					if ($queries_executed > 0 && self::TARGET_DB_READ_S_PER_1K_QUERIES > 0) {
-						[$target_time, $weight] = \src\BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
+						[$target_time, $weight] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
 							self::TARGET_DB_READ_S_PER_1K_QUERIES,
 							$queries,
 							self::WEIGHT_DB_READ
@@ -100,7 +98,7 @@ class BenchmarkScore {
 					$ops_executed = $results[$test_id]['operations'] ?? $cycles * 3;
 
 					if ($ops_executed > 0 && self::TARGET_DB_WRITE_S_PER_1K_OPS > 0) {
-						[$target_time, $weight] = \src\BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
+						[$target_time, $weight] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
 							self::TARGET_DB_WRITE_S_PER_1K_OPS,
 							$ops_executed,
 							self::WEIGHT_DB_WRITE
@@ -115,18 +113,17 @@ class BenchmarkScore {
 						: - 1;
 
 					if ( $memory_used < 0 ) {
-						continue; // Invalid memory used value
+						Logger::log('Invalid memory used value: ' . $memory_used, E_USER_WARNING, __CLASS__, __METHOD__);
 					}
 
 					// Assuming we have a target and weight constants for memory usage
-					if ( $config_memory > 0 && defined( 'BenchmarkScore::TARGET_MEMORY_MB' ) && defined( 'BenchmarkScore::WEIGHT_MEMORY' ) ) {
-						[ $target_time, $weight ] = \src\BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
+					if ( $config_memory > 0 ) {
+						[ $target_time, $weight ] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
 							self::TARGET_MEMORY_MB,
 							$config_memory,
 							self::WEIGHT_MEMORY
 						);
 					}
-
 				break;
 			}
 

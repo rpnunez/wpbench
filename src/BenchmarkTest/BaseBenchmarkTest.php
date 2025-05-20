@@ -44,5 +44,5 @@ interface BaseBenchmarkTest {
      */
     public function run( int $value ) : array;
 
-	public function checkSystemHealth();
+	//public function checkSystemHealth();
 }

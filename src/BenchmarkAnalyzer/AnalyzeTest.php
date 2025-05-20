@@ -1,6 +1,6 @@
 <?php
 
-namespace src\BenchmarkAnalyzer;
+namespace WPBench\BenchmarkAnalyzer;
 
 class AnalyzeTest {
 

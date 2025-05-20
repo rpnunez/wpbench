@@ -2,6 +2,7 @@
 namespace WPBench;
 use WP_Post;
 use WPBench\AdminBenchmark;
+use WPBench\Guards\PluginGuard;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -115,62 +116,31 @@ class PluginState {
      * @return array{to_activate: string[], to_deactivate: string[]}
      */
     public function calculateStateChanges(array $currentState, array $desiredPlugins) : array {
-		$current_site = $currentState['active_site'] ?? [];
-		$current_network = $currentState['active_network'] ?? [];
-		$current_all = array_unique(array_merge($current_site, $current_network));
+	    $current_site = $currentState['active_site'] ?? [];
+	    $current_network = $currentState['active_network'] ?? [];
+	    $current_all = array_unique(array_merge($current_site, $current_network));
 
-        // Ensure desired state is just a list of files
-        $desired = array_unique($desiredPlugins);
+	    // Ensure desired state includes WPBench, handled by PluginGuard
+	    $desiredIncludingSelf = PluginGuard::ensureWPBenchInDesiredList(array_unique($desiredPlugins)); // <-- UPDATED static call (FQCN if no use statement)
 
-	    // --- WPBench Self-Protection: WPBench is always desired ---
-	    // Get WPBench's own plugin file path
-	    $wpbench_plugin_basename = plugin_basename(WPBENCH_PATH . 'wpbench.php');
+	    $can_manage_network = is_multisite() && current_user_can('manage_network_plugins');
+	    $deactivateCandidates = $can_manage_network ? $current_all : $current_site;
 
-	    // This handles cases where it might be missing from $desiredPlugins due to
-	    // form submission quirks with disabled checkboxes, although UI attempts to keep it checked.
-	    if (!in_array($wpbench_plugin_basename, $desired)) {
-		    $desired[] = $wpbench_plugin_basename;
+	    if (!$can_manage_network) {
+		    $deactivateCandidates = array_diff($deactivateCandidates, $current_network);
 	    }
-	    // --- End WPBench Self-Protection ---
 
-        // Determine what needs changing based only on *site* plugins if user cannot manage network
-        $can_manage_network = is_multisite() && current_user_can('manage_network_plugins');
+	    $toDeactivate = array_diff($deactivateCandidates, $desiredIncludingSelf);
+	    $toActivate = array_diff($desiredIncludingSelf, $current_all);
 
-        // Plugins to deactivate: Are currently active (site only unless network admin) AND NOT in the desired list.
-        $deactivate_candidates = $can_manage_network ? $current_all : $current_site;
-
-        // Ensure we don't try to deactivate network plugins if not network admin, even if they were somehow in $current_site
-        if (!$can_manage_network) {
-            $deactivate_candidates = array_diff($deactivate_candidates, $current_network);
-        }
-
-		// Plugins to deactivate: Are a deactivation candidate and is NOT desired
-        $to_deactivate = array_diff($deactivate_candidates, $desired);
-
-        // Plugins to activate: Are in the desired list AND NOT currently active (anywhere).
-        $to_activate = array_diff($desired, $current_all);
-
-	    // --- WPBench Self-Protection: Yank it out of the to_activate and to_deactivate plugin lists ---
-
-	    // Remove WPBench from to_deactivate
-	    $to_deactivate = array_values(array_diff($to_deactivate, [$wpbench_plugin_basename]));
-
-	    // Remove WPBench from to_activate (it should always be active).
-	    $to_activate = array_values(array_diff($to_activate, [$wpbench_plugin_basename]));
-
-	    // --- End WPBench Self-Protection ---
-
-		// If not network admin, remove any plugins from $to_activate that are *only* network administrable?
-		// This logic gets complex. For now, assume activate only tries site-level activation.
-		// The `PluginManager` should handle permissions more granularly if needed.
-
-	    // Re-index arrays
-	    $to_activate = array_values(array_unique($to_activate));
-		$to_deactivate = array_values(array_unique($to_deactivate));
+	    // --- Use PluginGuard static methods for filtering ---
+	    $toDeactivate = PluginGuard::filterWPBenchFromDeactivationList($toDeactivate); // <-- UPDATED static call
+	    $toActivate = PluginGuard::filterWPBenchFromActivationList($toActivate);       // <-- UPDATED static call
+	    // --- END SAFEGUARD ---
 
         return [
-            'to_activate'   => $to_activate,
-            'to_deactivate' => $to_deactivate,
+            'to_activate'   => $toActivate,
+            'to_deactivate' => $toDeactivate,
         ];
     }
 

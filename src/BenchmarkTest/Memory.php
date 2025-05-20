@@ -12,11 +12,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Memory implements BaseBenchmarkTest {
 
 	/**
-	 * Retrieves the singleton instance of the CPU class.
+	 * Retrieves the singleton instance of the Memory class.
 	 *
-	 * @return CPU|null The singleton instance of the CPU class, or null if an instance is not created.
+	 * @return Memory|null The singleton instance of the Memory class, or null if an instance is not created.
 	 */
-	public function getInstance(): ?CPU {
+	public function getInstance(): ?Memory {
 		static $instance = null;
 
 		if ( null === $instance ) {
