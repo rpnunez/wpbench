@@ -160,13 +160,37 @@ class TestRegistry {
     }
 
 	/**
+	 * Retrieves an instance of the specified test.
+	 *
+	 * @param string $test_id The unique identifier of the test to retrieve.
+	 *
+	 * @return BaseBenchmarkTest|null Returns the instance of the test if found, or null if the test is not available.
+	 */
+	public function get_test_instance(string $test_id): ?BaseBenchmarkTest {
+		// Ensure available tests are loaded
+		$this->get_available_tests();
+
+		if (!isset($this->available_tests[$test_id])) {
+			return null; // Test not found
+		}
+
+		if (!isset($this->instances[$test_id])) {
+			// Lazy-load the test instance
+			$class_name = $this->available_tests[$test_id]['class'];
+			$this->instances[$test_id] = new $class_name();
+		}
+
+		return $this->instances[$test_id];
+	}
+
+	/**
 	 * Get an instance of a specific benchmark test class.
 	 * Caches instances for reuse within the same request.
 	 *
 	 * @param string $testId The ID of the test (e.g., 'cpu').
 	 * @return BaseBenchmarkTest|null Instance of the test class or null on failure.
 	 */
-	public function get_test_instance(string $test_id): ?BaseBenchmarkTest {
+	public function get_test_instance_old(string $test_id): ?BaseBenchmarkTest {
 		$available_tests = $this->get_available_tests();
 
 		// Return the instance if available
@@ -180,7 +204,7 @@ class TestRegistry {
      * @param string $testId The ID of the test (e.g., 'cpu').
      * @return BaseBenchmarkTest|null Instance of the test class or null on failure.
      */
-    public function get_test_instance_old(string $testId) : ?BaseBenchmarkTest {
+    public function get_test_instance_old2(string $testId) : ?BaseBenchmarkTest {
         if (isset($this->instances[$testId])) {
             return $this->instances[$testId];
         }

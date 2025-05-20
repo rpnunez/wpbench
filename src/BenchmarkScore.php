@@ -2,6 +2,8 @@
 namespace WPBench;
 
 // Exit if accessed directly
+use WPBench\BenchmarkTest\CPU;
+
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
@@ -12,14 +14,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 class BenchmarkScore {
 
     // --- Score Calculation Constants ---
-    public const float TARGET_CPU_S_PER_M_ITER = 0.5;
+
     public const float TARGET_FILE_IO_S_PER_1K_OPS = 0.1;
     public const float TARGET_DB_READ_S_PER_1K_QUERIES = 0.2;
     public const float TARGET_DB_WRITE_S_PER_1K_OPS = 0.3;
 	public const float TARGET_MEMORY_MB = 100;
 
     // --- Weights (Should ideally add up to 1.0) ---
-    public const float WEIGHT_CPU = 0.30;
+
     public const float WEIGHT_FILE_IO = 0.10;
     public const float WEIGHT_DB_READ = 0.20;
     public const float WEIGHT_DB_WRITE = 0.20;
@@ -56,6 +58,28 @@ class BenchmarkScore {
 			$weight = 0;
 			$sub_score = 0;
 
+			// Dynamically retrieve the test class instance from TestRegistry
+			$test = TestRegistry::get_test_instance($test_id); // Assume `get_test_instance` returns the test class
+
+			if (!$test) {
+				Logger::log("BenchmarkTest with ID $test_id not found.", E_USER_WARNING, __CLASS__, __METHOD__);
+				continue;
+			}
+
+			// Delegate score calculation to the test class
+			//@TODO: This is the refactored version. Make it work.
+			//try {
+			//	$score_details = $test->calculateScore($results[$test_id], $config); // Test handles its own logic
+			//	if (isset($score_details['sub_score'], $score_details['weight'])) {
+			//		$sub_scores[] = $score_details['sub_score'] * $score_details['weight'];
+			//		$total_weight += $score_details['weight'];
+			//		$has_valid_subscore = true;
+			//	}
+			//} catch (\Exception $e) {
+			//	Logger::log("Error calculating score for test $test_id: " . $e->getMessage(), E_USER_WARNING, __CLASS__, __METHOD__);
+			//}
+
+
 			// Handle each test type based on test IDs
 			// @TODO: Refactor this, as right now, we are breaking the dynamic intention of BenchmarkTest's. Each BenchmarkTest should have a calculateScore() method, used here.
 			switch ($test_id) {
@@ -63,9 +87,9 @@ class BenchmarkScore {
 					$iterations = (int) ($config['config_cpu'] ?? 0);
 
 					[$target_time, $weight] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
-						self::TARGET_CPU_S_PER_M_ITER,
+						CPU::TARGET_CPU_S_PER_M_ITER, // Ugly hack while refactoring
 						$iterations,
-						self::WEIGHT_CPU,
+						CPU::WEIGHT_CPU, // Ugly hack while refactoring
 
 					);
 				break;

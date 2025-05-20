@@ -44,5 +44,18 @@ interface BaseBenchmarkTest {
      */
     public function run( int $value ) : array;
 
+	/**
+	 * Calculates the score for the benchmark test.
+	 *
+	 * @param array $test_results Results specific to this test.
+	 * @param array $config       Benchmark configuration.
+	 * @return array {
+	 *     @type float $sub_score The score calculated for this test.
+	 *     @type float $weight    The weight assigned to this test.
+	 * }
+	 */
+	public function calculateScore(array $test_results, array $config): array;
+
+
 	//public function checkSystemHealth();
 }

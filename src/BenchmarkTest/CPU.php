@@ -8,6 +8,7 @@ use WPBench\Helpers\Utility;
 use WPBench\Logger;
 use WPBench\Guards\ResourceGuard;
 use WPBench\Exceptions\MaxIterationsReached;
+use WPBench\BenchmarkAnalyzer;
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
@@ -29,6 +30,11 @@ class CPU implements BaseBenchmarkTest {
 	private const int MAX_EXECUTION_TIME_SECONDS = 30;
 
 	private const int MAX_MEMORY_USAGE_MB = 128;
+
+	/** Scoring Variables */
+
+	public const float TARGET_CPU_S_PER_M_ITER = 0.5;
+	public const float WEIGHT_CPU = 0.30;
 
 	/**
 	 * Retrieves the singleton instance of the CPU class.
@@ -63,7 +69,36 @@ class CPU implements BaseBenchmarkTest {
         ];
     }
 
-    /**
+	/**
+	 * Calculates the sub-score and weight based on test results and configuration.
+	 *
+	 * @param array $test_results The results of the benchmarking test, including timing data.
+	 * @param array $config The configuration settings, including CPU iteration count information.
+	 *
+	 * @return array An associative array with keys 'sub_score' and 'weight' representing
+	 *               the calculated score and weight respectively.
+	 */
+	public function calculateScore(array $test_results, array $config): array {
+		$iterations = (int) ($config['config_cpu'] ?? 0);
+		$time = (float) ($test_results['time'] ?? 0);
+
+		if ($iterations > 0 && $time > 0) {
+			// Calculate target time and weight
+			[$target_time, $weight] = BenchmarkAnalyzer\AnalyzeTest::calculateTargetTimeWeight(
+				self::TARGET_CPU_S_PER_M_ITER,
+				$iterations,
+				self::WEIGHT_CPU
+			);
+
+			$sub_score = max(0, (1 - ($time / $target_time))) * 100; // Scoring logic
+			return ['sub_score' => $sub_score, 'weight' => $weight];
+		}
+
+		return ['sub_score' => 0, 'weight' => 0];
+	}
+
+
+	/**
      * Run the CPU benchmark test.
      *
      * @param mixed $value Number of iterations.
