@@ -47,6 +47,15 @@ class DBWrite implements BaseBenchmarkTest {
 		];
 	}
 
+	private function buildResult(float $time, int $operations, int $rowsAffected, ?string $error): array {
+		return [
+			'time' => $time,
+			'operations' => $operations,
+			'rows_affected' => $rowsAffected,
+			'error' => $error,
+		];
+	}
+
     /**
      * Run the Database Write benchmark test.
      * Creates, uses, and drops a temporary table.
@@ -207,15 +216,6 @@ class DBWrite implements BaseBenchmarkTest {
 		$wpdb->show_errors($originalShowErrors);
 	}
 
-	private function buildResult(float $time, int $operations, int $rowsAffected, ?string $error): array {
-		return [
-			'time' => $time,
-			'operations' => $operations,
-			'rows_affected' => $rowsAffected,
-			'error' => $error,
-		];
-	}
-
     public function run_old( $value ) : array {
 	    global $wpdb;
 
@@ -357,11 +357,17 @@ class DBWrite implements BaseBenchmarkTest {
             $wpdb->show_errors($original_show_errors); // Restore original error display state
         }
 
-        return [
-            'time' => round(microtime(true) - $start, 4),
-            'operations' => $operations, // More accurate count of attempted ops
-            'rows_affected' => $rows_affected, // Count of successful ops
-            'error' => $error
-        ];
+        return $this->buildResult(
+            time: round(microtime(true) - $start, 4),
+            operations: $operations, // More accurate count of attempted ops
+            rowsAffected: $rows_affected, // Count of successful ops
+            error: $error
+        );
     }
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
+	}
 }

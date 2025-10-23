@@ -1,8 +1,9 @@
 <?php
-namespace WPBench\BenchmarkTest;
+namespace src\BenchmarkTest\dev;
 
+use WPBench\BenchmarkTest\BaseBenchmarkTest;
+use WPBench\BenchmarkTest\CPU;
 use WPBench\Guards\ResourceGuard;
-use WP_Error;
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -127,5 +128,11 @@ class WPHTTP implements BaseBenchmarkTest {
 			'error_details' => array_slice($error_details, 0, 5), // Return first 5 error details
 			'error'        => $error_message, // Overall error message
 		];
+	}
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
 	}
 }

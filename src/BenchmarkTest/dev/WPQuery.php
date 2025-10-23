@@ -1,8 +1,12 @@
 <?php
-namespace WPBench\BenchmarkTest;
+namespace src\BenchmarkTest\dev;
 
-use WPBench\Guards\ResourceGuard; // If you want to use iteration checks inside the loop
-use WP_Query; // WordPress Query class
+use WP_Query;
+use WPBench\BenchmarkTest\BaseBenchmarkTest;
+use WPBench\Guards\ResourceGuard;
+
+// If you want to use iteration checks inside the loop
+// WordPress Query class
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -129,5 +133,11 @@ class WPQuery implements BaseBenchmarkTest {
 			'posts_found'      => $total_posts_found,
 			'error'            => $error_message,
 		];
+	}
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
 	}
 }

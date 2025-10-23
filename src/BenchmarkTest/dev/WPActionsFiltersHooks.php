@@ -1,7 +1,10 @@
 <?php
-namespace WPBench\BenchmarkTest;
+namespace src\BenchmarkTest\dev;
 
-use WPBench\Guards\ResourceGuard; // If detailed iteration checks are needed within loops
+use WPBench\BenchmarkTest\BaseBenchmarkTest;
+use WPBench\Guards\ResourceGuard;
+
+// If detailed iteration checks are needed within loops
 
 // Exit if accessed directly
 if ( ! defined( 'ABSPATH' ) ) {
@@ -91,5 +94,11 @@ class WPActionsFiltersHooks implements BaseBenchmarkTest {
 			'total_hook_operations' => $total_operations,
 			'error'            => $error_message,
 		];
+	}
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
 	}
 }

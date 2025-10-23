@@ -45,16 +45,15 @@ interface BaseBenchmarkTest {
     public function run( int $value ) : array;
 
 	/**
-	 * Calculates the score for the benchmark test.
+	 * Calculates the sub-score and weight for this specific test.
 	 *
-	 * @param array $test_results Results specific to this test.
-	 * @param array $config       Benchmark configuration.
-	 * @return array {
-	 *     @type float $sub_score The score calculated for this test.
-	 *     @type float $weight    The weight assigned to this test.
-	 * }
+	 * @param array $test_run_results The specific results array from this test's run() method.
+	 * @param array $full_config      The full benchmark configuration array (e.g., $config['config_cpu']).
+	 *
+	 * @return array An associative array with keys 'sub_score' (0-100) and 'weight' (0.0-1.0).
+	 * Return ['sub_score' => 0, 'weight' => 0] or null if score cannot be calculated.
 	 */
-	public function calculateScore(array $test_results, array $config): array;
+	public function calculateScore(array $test_run_results, array $full_config) : ?array;
 
 
 	//public function checkSystemHealth();

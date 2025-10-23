@@ -1,6 +1,7 @@
 <?php
-namespace WPBench\BenchmarkTest;
+namespace src\BenchmarkTest\dev;
 
+use WPBench\BenchmarkTest\BaseBenchmarkTest;
 use WPBench\Guards\ResourceGuard;
 
 // Exit if accessed directly
@@ -99,5 +100,11 @@ class WPShortcodeRendering implements BaseBenchmarkTest {
 			'operations'   => $total_operations,
 			'error'        => $error_message,
 		];
+	}
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
 	}
 }

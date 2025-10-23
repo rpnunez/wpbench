@@ -1,6 +1,7 @@
 <?php
-namespace WPBench\BenchmarkTest;
+namespace src\BenchmarkTest\dev;
 
+use WPBench\BenchmarkTest\BaseBenchmarkTest;
 use WPBench\Guards\ResourceGuard;
 
 // Exit if accessed directly
@@ -10,7 +11,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class DBHeavyLoad implements BaseBenchmarkTest {
 
-	public function get_info() : array {
+	public function getInstance() {
+		// TODO: Implement getInstance() method.
+	}
+
+	public function getInfo() : array {
 		return [
 			'id'            => 'db_heavy_load',
 			'name'          => __('DB Mixed Heavy Load Test', 'wpbench'),
@@ -135,5 +140,11 @@ class DBHeavyLoad implements BaseBenchmarkTest {
 			'cycles'       => $iterations,
 			'error'        => $error_message,
 		];
+	}
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
 	}
 }

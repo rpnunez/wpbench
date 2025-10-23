@@ -49,6 +49,16 @@ class File implements BaseBenchmarkTest {
 		];
 	}
 
+	public function buildResult(float $time, int $operations, int $bytesWritten, int $bytesRead, ?string $error): array {
+		return [
+			'time' => $time,
+			'operations' => $operations,
+			'bytes_written' => $bytesWritten,
+			'bytes_read' => $bytesRead,
+			'error' => $error,
+		];
+	}
+
     /**
      * Run the File I/O benchmark test.
      *
@@ -172,16 +182,6 @@ class File implements BaseBenchmarkTest {
 		}
 	}
 
-	public function buildResult(float $time, int $operations, int $bytesWritten, int $bytesRead, ?string $error): array {
-		return [
-			'time' => $time,
-			'operations' => $operations,
-			'bytes_written' => $bytesWritten,
-			'bytes_read' => $bytesRead,
-			'error' => $error,
-		];
-	}
-
     public function run_old( $value ) : array {
         $iterations = absint($value);
          if ($iterations <= 0) {
@@ -276,4 +276,10 @@ class File implements BaseBenchmarkTest {
             'error' => $error
         ];
     }
+
+	public function calculateScore( array $test_results, array $config ): array {
+		// TODO: Implement calculateScore() method.
+
+		return [];
+	}
 }
