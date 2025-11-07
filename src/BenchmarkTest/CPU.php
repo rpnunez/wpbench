@@ -25,22 +25,10 @@ class CPU implements BaseBenchmarkTest {
 
 	private const int WORKLOAD_MULTIPLIER = 50;
 
-	private const int MAX_CPU_ITERATIONS = 100000;
-
-	private const int MAX_EXECUTION_TIME_SECONDS = 30;
-
-	private const int MAX_MEMORY_USAGE_MB = 128;
-
-	/** Scoring Variables */
-
-	public const float TARGET_CPU_S_PER_M_ITER = 0.5;
-	public const float WEIGHT_CPU = 0.30;
-
 	// --- Scoring Parameters for CPU Test ---
 	public const float TARGET_S_PER_M_ITER = 0.45; // Target seconds per million iterations (Adjust as needed)
 	public const float SCORE_WEIGHT = 0.30;        // Weight for this test in overall score
-
-	// MAX_CPU_ITERATIONS, MAX_EXECUTION_TIME_SECONDS, MAX_MEMORY_USAGE_MB can be used by ResourceGuard checks if desired
+    private int $scoreMinimum = 20;
 
 	/**
 	 * Retrieves the singleton instance of the CPU class.
@@ -83,15 +71,6 @@ class CPU implements BaseBenchmarkTest {
 	}
 
 	/**
-	 * Calculates the sub-score and weight based on test results and configuration.
-	 *
-	 * @param array $test_results The results of the benchmarking test, including timing data.
-	 * @param array $config The configuration settings, including CPU iteration count information.
-	 *
-	 * @return array An associative array with keys 'sub_score' and 'weight' representing
-	 *               the calculated score and weight respectively.
-	 */
-	/**
 	 * Calculates the sub-score and weight for the CPU test.
 	 */
 	public function calculateScore(array $test_run_results, array $full_config) : ?array {
@@ -109,23 +88,13 @@ class CPU implements BaseBenchmarkTest {
 			return ['sub_score' => 0, 'weight' => self::SCORE_WEIGHT];
 		}
 
-		// Score formula: 100 means achieved target or better. Lower score for slower times.
-		// (1 - ActualTime / TargetTime) gives a ratio. If ActualTime = TargetTime, ratio is 0, score is 100.
-		// If ActualTime is 2 * TargetTime, ratio is -1, score is 0.
-		// If ActualTime is 0.5 * TargetTime, ratio is 0.5, score is 50. This is inverse, let's fix.
-		// We want: if ActualTime = TargetTime, score ~50-75. If ActualTime < TargetTime, score -> 100.
-		// Simpler: score = 100 * (TargetTime / ActualTime) capped at 100 if ActualTime is very low. Or (1 - (ActualTime - TargetTime) / TargetTime)
-		// Using: Score = max(0, 100 * (1 - (ActualTime / IdealTargetTime)))
-		// Where IdealTargetTime is the time taken by an "ideal" system.
-		// For WPBench, let's use: score = 100 * (1 - ActualTime / (ExpectedGoodTime))
-		// Let's use the formula: if ActualTime is less than or equal to TargetTime, score is higher.
-		// If ActualTime = TargetTime, score around 50-75. If ActualTime = 0.5 * TargetTime, score closer to 100.
-		// If ActualTime = 1.5 * TargetTime, score closer to 0.
+        $score = 100 * ($target_time_for_run / $time);
 
-		$sub_score = max(0, 100 * (1 - ($time / (2 * $target_time_for_run)) ) );
-		// This gives 50 if time = target_time_for_run, 100 if time = 0, 0 if time = 2*target_time_for_run
+        if ($score < $this->scoreMinimum) {
+            $score = $this->scoreMinimum;
+        }
 
-		return ['sub_score' => round($sub_score), 'weight' => self::SCORE_WEIGHT];
+		return ['sub_score' => round(min(100, $score)), 'weight' => self::SCORE_WEIGHT];
 	}
 
 	/**
@@ -151,11 +120,6 @@ class CPU implements BaseBenchmarkTest {
 				// Run safeguards to ensure we don't break ourselves
 				if ($iteration % 1000 === 0) {
 					ResourceGuard::checkIfMaxIterationsReached($iteration);
-
-					//Safeguard::checkIfCPULoadReached( sys_getloadavg()[0] );
-					//Safeguard::checkIfMaxExecutionTimeReached( $startTime, self::MAX_EXECUTION_TIME_SECONDS );
-					//Safeguard::checkIfMaxMemoryReached(memory_get_usage(), self::MAX_MEMORY_USAGE_MB);
-					//Safeguard::checkIfMaxIterationsReached( $iteration, self::MAX_CPU_ITERATIONS );
 				}
 
 				$mediumLoadWork = $this->performMediumOperations($iteration);
@@ -214,41 +178,6 @@ class CPU implements BaseBenchmarkTest {
 
 	private function updateChecksum(int $checksum, string $value): int {
 		return $checksum + crc32($value);
-	}
-
-	public function run_old( mixed $value ) : array {
-		$totalIterations = absint($value);
-
-		if ( $totalIterations <= 0 ) {
-			return $this->buildResult(0, 'Invalid iteration count.');
-
-		}
-
-		$startTime = microtime(true);
-		$error = null;
-		$checksum = 0;
-
-		try {
-			for ( $iteration = 0; $iteration < $totalIterations; $iteration++ ) {
-				$result = 0;
-				$result += $this->performMediumOperations($iteration);
-
-				$this->performIntensiveOperations($iteration);
-
-				$generatedString = Utility::get_random_string( 200, RandomStringTypes::Alphanumeric);
-
-				if ( $this->isPeriodic($iteration) ) {
-					$checksum = $this->updateChecksum($checksum, $generatedString);
-				}
-			}
-		} catch (\Throwable $exception) {
-			Logger::log("Error during CPU test: ". $exception->getMessage(), 'error');
-		}
-
-		return [
-			'time' => round(microtime(true) - $startTime, 4),
-			'error' => $error,
-		];
 	}
 
 	public function checkSystemHealth() {

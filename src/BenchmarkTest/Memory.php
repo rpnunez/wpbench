@@ -12,13 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Memory implements BaseBenchmarkTest {
 
 	// --- Scoring Parameters for Memory Test ---
-	// Target peak memory usage in MB for the configured test size (e.g., 1024 KB)
-	// This is tricky as peak usage is influenced by PHP config & overall script.
-	// Let's aim for a score based on how much *additional* peak memory the allocation causes,
-	// or simply a fixed target for a given allocation.
-	// Lower peak memory is better.
 	public const float TARGET_PEAK_MB_IDEAL_FACTOR = 1.5; // Ideal peak should not be much more than allocated (e.g. 1.5x allocated size)
 	public const float SCORE_WEIGHT = 0.15; // Memory test weight
+    private int $scoreMinimum = 20;
 
 	/**
 	 * Retrieves the singleton instance of the Memory class.
@@ -49,7 +45,6 @@ class Memory implements BaseBenchmarkTest {
 			'default_value' => 2048, // Increased default
 			'min_value'     => 256,
 			'max_value'     => 32768, // 32MB, be cautious
-			// 'instance' key removed
 		];
 	}
 
@@ -57,7 +52,6 @@ class Memory implements BaseBenchmarkTest {
 		return [
 			'time' => $time,
 			'peak_usage_mb' => $peakUsageMB,
-			// 'peak_increase_mb' => $peak_increase_mb, // Optional: additional metric
 			'allocated_kb' => $allocatedKB,
 			'actually_allocated_kb' => $actuallyAllocatedKB,
 			'error' => $error
@@ -69,7 +63,6 @@ class Memory implements BaseBenchmarkTest {
 		if ( $size_kb <= 0 ) { return ['time' => 0, 'peak_usage_mb' => 0, 'error' => 'Invalid memory size.']; }
 
 		$start = microtime(true);
-		$memory_before_allocation = memory_get_usage(true); // Real usage
 		$peak_memory_before_allocation = memory_get_peak_usage(true);
 		$error = null;
 		$string = null;
@@ -98,13 +91,10 @@ class Memory implements BaseBenchmarkTest {
 		finally { unset($string); }
 
 		$peak_memory_after_test = memory_get_peak_usage(true);
-		// The most meaningful metric is the peak during the operation, not necessarily the increase.
-		// $peak_increase_mb = round(($peak_memory_after_test - $peak_memory_before_allocation) / 1024 / 1024, 2);
 
 		return $this->buildResult(
 			round(microtime(true) - $start, 4),
 			round($peak_memory_after_test / 1024 / 1024, 2), // Report total peak
-			// 'peak_increase_mb' => $peak_increase_mb, // Optional: additional metric
 			$size_kb, // Store what was requested for scoring context
 			round($allocation_size / 1024),
 			$error
@@ -124,25 +114,20 @@ class Memory implements BaseBenchmarkTest {
 		}
 
 		$allocated_mb = $allocated_kb / 1024.0;
-		// Ideal target: peak memory shouldn't exceed allocation by too much.
-		// This is a very rough estimate. Peak usage includes PHP runtime, other variables, etc.
-		// A better score might penalize excessive overhead beyond the allocation.
 		$ideal_max_peak_mb = $allocated_mb * self::TARGET_PEAK_MB_IDEAL_FACTOR;
 
 		if ($ideal_max_peak_mb <=0) {
 			return [ 'sub_score' => 0, 'weight' => self::SCORE_WEIGHT ];
 		}
 
-		// If actual peak is less than or equal to ideal, score is 100.
-		// If actual peak is double the ideal, score is 0.
-		$sub_score = max(0, 100 * (1 - (($peak_usage_mb - $allocated_mb) / $allocated_mb) ));
-
-		// Simplified: if peak_usage is close to allocated_mb, score is high.
-		// If peak_usage_mb <= allocated_mb * 1.1 (10% overhead), score = 100
-		// If peak_usage_mb > allocated_mb * 2 (100% overhead), score = 0
 		$overhead_ratio = ($peak_usage_mb - $allocated_mb) / $allocated_mb;
-		$sub_score = max(0, min(100, 100 * (1 - $overhead_ratio) ));
+		$score = 100 * (1 - $overhead_ratio);
 
-		return ['sub_score' => round($sub_score), 'weight' => self::SCORE_WEIGHT];
+        if ($score < $this->scoreMinimum) {
+            $score = $this->scoreMinimum;
+        }
+
+
+		return ['sub_score' => round(min(100, $score)), 'weight' => self::SCORE_WEIGHT];
 	}
 }
