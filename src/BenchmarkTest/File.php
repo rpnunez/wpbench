@@ -14,6 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * of completed operations.
  */
 class File implements BaseBenchmarkTest {
+    public const float TARGET_FILE_IO_S_PER_1K_OPS = 0.1;
+    public const float WEIGHT_FILE_IO = 0.10;
+    private int $scoreMinimum = 20;
 
 	/**
 	 * Retrieves the singleton instance of the File class.
@@ -182,104 +185,26 @@ class File implements BaseBenchmarkTest {
 		}
 	}
 
-    public function run_old( $value ) : array {
-        $iterations = absint($value);
-         if ($iterations <= 0) {
-            return ['time' => 0, 'operations' => 0, 'bytes_written' => 0, 'bytes_read' => 0, 'error' => 'Invalid iteration count.'];
-        }
-
-         $start = microtime(true);
-         $upload_dir = wp_upload_dir();
-         $error = null;
-         $bytes_written = 0;
-         $bytes_read = 0;
-         $operations = 0;
-         $temp_file = null; // Initialize
-
-         // Check if basedir is writable before proceeding
-         if ( ! $upload_dir || ! empty( $upload_dir['error'] ) || ! wp_is_writable( $upload_dir['basedir'] ) ) {
-			$error = 'Upload directory is not writable or accessible. Error: ' . ($upload_dir['error'] ?? 'Check permissions.');
-
-			// Bail early if directory isn't usable
-			return [
-				'time' => round(microtime(true) - $start, 4),
-				'operations' => 0, 'bytes_written' => 0, 'bytes_read' => 0,
-				'error' => $error
-			];
-         }
-
-         $temp_file = trailingslashit($upload_dir['basedir']) . 'wpbench_temp_file_' . uniqid() . '.txt';
-         $dummy_data = str_repeat("0123456789abcdef", 64); // 1KB data chunk
-         $data_len = strlen($dummy_data);
-
-        try {
-            for ($i = 0; $i < $iterations; $i++) {
-                // --- Write ---
-                $fh_write = @fopen($temp_file, 'w');
-
-                if (!$fh_write) {
-                    $last_error = error_get_last();
-
-                    throw new \Exception("fopen (write) failed: " . ($last_error['message'] ?? 'Unknown reason.'));
-                }
-
-                $written = fwrite($fh_write, $dummy_data);
-                fclose($fh_write);
-                $operations++; // Count write operation attempt
-
-                if ($written === false) {
-                     throw new \Exception("fwrite failed.");
-                } elseif ($written !== $data_len) {
-                     throw new \Exception("fwrite wrote partial data ($written / $data_len bytes). Disk full?");
-                } else {
-                    $bytes_written += $written;
-                }
-
-                // --- Read ---
-                $fh_read = @fopen($temp_file, 'r');
-
-                 if (!$fh_read) {
-                     $last_error = error_get_last();
-
-                     throw new \Exception("fopen (read) failed: " . ($last_error['message'] ?? 'Unknown reason.'));
-                 }
-
-                // Read exactly the amount written or up to a reasonable max
-                $read_data = fread($fh_read, $data_len + 10); // Read slightly more to test EOF
-                fclose($fh_read);
-                $operations++; // Count read operation attempt
-
-                 if ($read_data === false) {
-                     throw new \Exception("fread failed.");
-                 } else {
-                     $bytes_read += strlen($read_data);
-                     // Optional: Verify content matches $dummy_data? Could slow down test.
-                     if ($read_data !== $dummy_data) {
-						 throw new \Exception("Read data mismatch. Possible file corruption or race condition?");
-					 }
-                 }
-            }
-        } catch (\Exception $e) {
-            $error = $e->getMessage();
-        } finally {
-             // Ensure temp file is deleted even if errors occurred
-             if ($temp_file !== null && file_exists($temp_file)) {
-                @unlink($temp_file);
-             }
-        }
-
-        return [
-            'time' => round(microtime(true) - $start, 4),
-            'operations' => $operations, // Total actual operations attempted/completed
-            'bytes_written' => $bytes_written,
-            'bytes_read' => $bytes_read,
-            'error' => $error
-        ];
-    }
-
 	public function calculateScore( array $test_results, array $config ): array {
-		// TODO: Implement calculateScore() method.
+		$ops = (int) ($config['config_file_io'] ?? 0) * 2;
+        $time = isset($test_results['time']) ? (float) $test_results['time'] : -1;
 
-		return [];
+        if ($ops <= 0 || $time < 0) {
+            return ['sub_score' => 0, 'weight' => 0];
+        }
+
+        $target_time_for_run = self::TARGET_FILE_IO_S_PER_1K_OPS * ($ops / 1000.0);
+
+        if ($target_time_for_run <= 0) {
+            return ['sub_score' => 0, 'weight' => self::WEIGHT_FILE_IO];
+        }
+
+        $score = 100 * ($target_time_for_run / $time);
+
+        if ($score < $this->scoreMinimum) {
+            $score = $this->scoreMinimum;
+        }
+
+		return ['sub_score' => round(min(100, $score)), 'weight' => self::WEIGHT_FILE_IO];
 	}
 }

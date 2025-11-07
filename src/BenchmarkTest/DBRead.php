@@ -16,6 +16,7 @@ class DBRead implements BaseBenchmarkTest {
 	// --- Scoring Parameters for DB Read Test ---
 	public const float TARGET_S_PER_1K_QUERIES = 0.2; // Target seconds per 1000 queries
 	public const float SCORE_WEIGHT = 0.30;          // Weight for this test in overall score
+    private int $scoreMinimum = 20;
 
 
 	/**
@@ -47,7 +48,6 @@ class DBRead implements BaseBenchmarkTest {
 			'default_value' => 250,
 			'min_value'     => 10,
 			'max_value'     => 5000,
-			// 'instance' key removed
 		];
 	}
 
@@ -129,7 +129,6 @@ class DBRead implements BaseBenchmarkTest {
 	 * or null if score cannot be calculated.
 	 */
 	public function calculateScore(array $test_run_results, array $full_config) : ?array {
-		// $config_iterations = (int) ($full_config['config_db_read'] ?? 0); // Iterations from config
 		$queries_executed = isset($test_run_results['queries_executed']) ? (int) $test_run_results['queries_executed'] : 0;
 		$time = isset($test_run_results['time']) ? (float) $test_run_results['time'] : -1;
 
@@ -140,17 +139,17 @@ class DBRead implements BaseBenchmarkTest {
 		// Calculate the target time for the actual number of queries executed
 		$target_time_for_run = self::TARGET_S_PER_1K_QUERIES * ($queries_executed / 1000.0);
 
-		if ($target_time_for_run <= 0) { // Avoid division by zero or issues with very few queries
+		if ($target_time_for_run <= 0) {
 			return ['sub_score' => 0, 'weight' => self::SCORE_WEIGHT];
 		}
 
-		// Score formula:
-		// Gives 50 if time = target_time_for_run
-		// Gives 100 if time approaches 0
-		// Gives 0 if time = 2 * target_time_for_run or more
-		$sub_score = max(0, 100 * (1 - ($time / (2 * $target_time_for_run)) ) );
+        $score = 100 * ($target_time_for_run / $time);
 
-		return ['sub_score' => round($sub_score), 'weight' => self::SCORE_WEIGHT];
+        if ($score < $this->scoreMinimum) {
+            $score = $this->scoreMinimum;
+        }
+
+		return ['sub_score' => round(min(100, $score)), 'weight' => self::SCORE_WEIGHT];
 	}
 
 	private function initializeDatabaseSettings( \wpdb $wpdb ): bool { // Type hint $wpdb
@@ -196,85 +195,8 @@ class DBRead implements BaseBenchmarkTest {
 			if ( $wpdb->last_error ) {
 				$errorMessages[] = 'DB Error (Post Query for ID ' . $postId . '): ' . $wpdb->last_error;
 			}
-		} else {
-			// Not necessarily an error, but no query was run if no posts exist.
-			// $errorMessages[] = 'DB Info (Post Query): No posts exist to query.';
 		}
 
-		return $result; // Can be null if post doesn't exist, not publish, or on error
+		return $result;
 	}
-
-    public function run_old( $value ) : array {
-	    global $wpdb;
-
-        $iterations = absint($value);
-
-		if ( $iterations <= 0 ) {
-            return [
-				'time' => 0,
-				'queries_executed' => 0,
-				'rows_fetched' => 0,
-				'error' => 'Invalid iteration count.'
-            ];
-        }
-
-        $start = microtime(true);
-        $rows_fetched = 0;
-        $queries_executed = 0;
-        $error = null;
-        $original_show_errors = $wpdb->show_errors; // Store original state
-        $wpdb->show_errors(true); // Turn on error display for debugging within test
-
-        try {
-			// Find max post ID once to avoid querying non-existent posts too often
-			$max_post_id = (int) $wpdb->get_var("SELECT MAX(ID) FROM $wpdb->posts");
-
-			if ($wpdb->last_error) {
-				throw new \Exception("DB Error (Max Post ID Query): " . $wpdb->last_error);
-			}
-
-			$max_post_id = max(1, $max_post_id); // Ensure at least 1
-
-            for ($i = 0; $i < $iterations; $i++) {
-				// Query 1: Simple option query
-				$option_name = 'blogname';
-				$result = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM $wpdb->options WHERE option_name = %s LIMIT 1", $option_name ) );
-				$queries_executed++;
-
-				if ($wpdb->last_error) {
-					throw new \Exception("DB Error (Option Query): " . $wpdb->last_error);
-				}
-
-				if ($result !== null) {
-					$rows_fetched++; // Count as 1 "row" conceptually for get_var
-				}
-
-				// Query 2: Query a random existing post title
-				$post_id_to_query = rand(1, $max_post_id);
-				$post_title = $wpdb->get_var( $wpdb->prepare("SELECT post_title FROM $wpdb->posts WHERE ID = %d AND post_status = 'publish' LIMIT 1", $post_id_to_query));
-				$queries_executed++;
-
-				if ($wpdb->last_error) {
-					throw new \Exception("DB Error (Post Query): " . $wpdb->last_error);
-				}
-
-				if ($post_title !== null) {
-					$rows_fetched++; // Count as 1 "row"
-				}
-            }
-        } catch (\Exception $e) {
-			$error = $e->getMessage();
-			Logger::log('Error running DB Read test: ' . $error, E_USER_WARNING, __CLASS__, __METHOD__);
-        } finally {
-			$wpdb->show_errors($original_show_errors); // Restore original error display state
-        }
-
-        return [
-            'time' => round(microtime(true) - $start, 4),
-            'queries_executed' => $queries_executed,
-            'rows_fetched' => $rows_fetched,
-            'error' => $error
-        ];
-    }
-
 }
